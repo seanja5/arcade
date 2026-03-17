@@ -16,618 +16,620 @@ const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
 const LW = 900, LH = 600;
 let CW = 0, CH = 0;
-function resize() { CW = canvas.width = window.innerWidth; CH = canvas.height = window.innerHeight; }
-window.addEventListener('resize', resize); resize();
-const scaleX = () => CW / LW;
-const scaleY = () => CH / LH;
+function resize(){CW=canvas.width=window.innerWidth;CH=canvas.height=window.innerHeight;}
+window.addEventListener('resize',resize); resize();
+const scaleX=()=>CW/LW, scaleY=()=>CH/LH;
 
-const CLR = { bg:'#000814', player:'#00f5ff', enemy:'#ff2d78', ui:'#ffe600',
-              green:'#39ff14', orange:'#ff8800', purple:'#bf00ff', dim:'#1e3a5f', cursor:'#39ff14' };
+const CLR={bg:'#000814',player:'#00f5ff',enemy:'#ff2d78',ui:'#ffe600',
+           green:'#39ff14',orange:'#ff8800',purple:'#bf00ff',dim:'#1e3a5f',cursor:'#39ff14'};
 
-const DIFFS = [
-  { label:'ROOKIE',    color:'#39ff14', barrelSpd:1.8, spawnRate:180, msg:'Nice warm-up.' },
-  { label:'VETERAN',   color:'#ff8800', barrelSpd:3.2, spawnRate:110, msg:'Solid run.'    },
-  { label:'NIGHTMARE', color:'#ff2d78', barrelSpd:5.0, spawnRate:65,  msg:'INSANE.'       },
+const DIFFS=[
+  {label:'ROOKIE',    color:'#39ff14', barrelSpd:2.2, spawnRate:120, maxBarrels:3},
+  {label:'VETERAN',   color:'#ff8800', barrelSpd:3.8, spawnRate:65,  maxBarrels:5},
+  {label:'NIGHTMARE', color:'#ff2d78', barrelSpd:6.5, spawnRate:35,  maxBarrels:8},
 ];
 
-// ─── Layout ───────────────────────────────────────────────────────────────────
-// Floors: y is the TOP of each beam. Player stands on floor y.
-// floor 0 = bottom, floor 3 = top
-const FLOORS = [
-  { y: 510, x1:  60, x2: 840 },   // floor 0 — player starts here
-  { y: 390, x1:  60, x2: 780 },   // floor 1
-  { y: 270, x1: 120, x2: 840 },   // floor 2
-  { y: 150, x1:  60, x2: 780 },   // floor 3 — gorilla up here
-];
-
-// Ladders: each connects floor[fromFloor] to floor[fromFloor+1]
-const LADDERS = [
-  { x: 200, fromFloor: 0 },   // left-ish
-  { x: 640, fromFloor: 1 },   // right-ish
-  { x: 300, fromFloor: 2 },   // mid-left
-];
-
-const LADDER_W = 24;
-const PLAYER_W = 16, PLAYER_H = 24;
-const BARREL_R = 10;
-const GRAVITY = 0.6;
-const JUMP_VEL = -13;
-
-let gstate = 'MENU';
-let diff = null;
-let score = 0, lives = 3;
-let particles = [];
-let barrels = [];
-let spawnTimer = 0;
-let frameCount = 0;
-
-let player = { x:0, y:0, vx:0, vy:0, onGround:false, onLadder:false,
-               floorIdx:0, facingRight:true, invincible:0 };
-let gorillaThrow = 0;
-
-let rawMX = CW/2, rawMY = CH/2, logMX = LW/2, logMY = LH/2;
-const keys = {};
-const BACK_BTN = { x:10, y:LH-32, w:110, h:22 };
-
-canvas.addEventListener('mousemove', e => {
-  const r = canvas.getBoundingClientRect();
-  rawMX = e.clientX - r.left; rawMY = e.clientY - r.top;
-  logMX = rawMX / scaleX(); logMY = rawMY / scaleY();
-});
-document.addEventListener('keydown', e => {
-  keys[e.code] = true;
-  if (gstate === 'MENU') {
-    if (e.code === 'Digit1') startGame(0);
-    if (e.code === 'Digit2') startGame(1);
-    if (e.code === 'Digit3') startGame(2);
+const LEVEL_CONFIGS=[
+  {
+    floors:[
+      {y:510,x1:60,x2:840},{y:390,x1:60,x2:780},
+      {y:270,x1:120,x2:840},{y:150,x1:60,x2:780}
+    ],
+    ladders:[{x:200,f:0},{x:640,f:1},{x:300,f:2}]
+  },
+  {
+    floors:[
+      {y:520,x1:60,x2:840},{y:420,x1:80,x2:750},
+      {y:320,x1:150,x2:840},{y:220,x1:60,x2:720},{y:120,x1:120,x2:840}
+    ],
+    ladders:[{x:160,f:0},{x:580,f:1},{x:220,f:2},{x:660,f:3}]
+  },
+  {
+    floors:[
+      {y:530,x1:60,x2:840},{y:450,x1:80,x2:750},
+      {y:370,x1:150,x2:840},{y:290,x1:60,x2:730},
+      {y:210,x1:140,x2:840},{y:130,x1:60,x2:760}
+    ],
+    ladders:[{x:150,f:0},{x:560,f:1},{x:230,f:2},{x:640,f:3},{x:280,f:4}]
+  },
+  {
+    floors:[
+      {y:540,x1:60,x2:840},{y:470,x1:80,x2:750},
+      {y:400,x1:150,x2:840},{y:330,x1:60,x2:730},
+      {y:260,x1:140,x2:840},{y:190,x1:60,x2:750},{y:120,x1:100,x2:800}
+    ],
+    ladders:[{x:140,f:0},{x:550,f:1},{x:200,f:2},{x:620,f:3},{x:250,f:4},{x:660,f:5}]
   }
-  if ((gstate === 'WIN' || gstate === 'GAMEOVER') && (e.code === 'Enter' || e.code === 'Space')) gstate = 'MENU';
-  if (gstate === 'PLAY' && e.code === 'Escape') gstate = 'MENU';
-});
-document.addEventListener('keyup', e => { delete keys[e.code]; });
+];
 
-canvas.addEventListener('click', e => {
-  const r = canvas.getBoundingClientRect();
-  const mx = (e.clientX - r.left) / scaleX();
-  const my = (e.clientY - r.top) / scaleY();
-  if (inBackBtn(mx, my)) { window.location.href = 'index.html'; return; }
-  if (gstate === 'MENU') {
-    for (let i = 0; i < 3; i++) { if (inDiffBtn(i, mx, my)) startGame(i); }
-  }
-  if (gstate === 'WIN' || gstate === 'GAMEOVER') gstate = 'MENU';
+const LEVEL_SPAWN_MULTS=[1.0,0.75,0.55,0.40];
+const LEVEL_SPD_MULTS=[1.0,1.2,1.4,1.6];
+
+const JUMP_VEL=-9, GRAVITY=0.85;
+const PLAYER_W=16, PLAYER_H=24;
+
+let gstate='MENU';
+let diff=null;
+let score=0, lives=3, level=1;
+let player={x:0,y:0,vx:0,vy:0,onGround:false,floorIdx:0,facingRight:true,invincible:0};
+let barrels=[];
+let particles=[];
+let frameCount=0;
+let spawnTimer=0;
+let winTimer=0;
+
+let malletItem={visible:false,x:0,y:0,despawnTimer:0};
+let playerMallet={active:false,timer:0};
+let malletSpawnTimer=0;
+
+let rawMX=CW/2,rawMY=CH/2,logMX=LW/2,logMY=LH/2;
+const keys={};
+const BACK_BTN={x:10,y:LH-32,w:110,h:22};
+
+canvas.addEventListener('mousemove',e=>{
+  const r=canvas.getBoundingClientRect();
+  rawMX=e.clientX-r.left; rawMY=e.clientY-r.top;
+  logMX=rawMX/scaleX(); logMY=rawMY/scaleY();
 });
 
-function inDiffBtn(i, mx, my) {
-  const bx = LW/2-160, by = 270 + i*62;
-  return mx >= bx && mx <= bx+320 && my >= by && my <= by+48;
+document.addEventListener('keydown',e=>{
+  keys[e.code]=true;
+  if(gstate==='MENU'){
+    if(e.code==='Digit1')startGame(0);
+    if(e.code==='Digit2')startGame(1);
+    if(e.code==='Digit3')startGame(2);
+  }
+  if(gstate==='GAMEOVER'&&(e.code==='Enter'||e.code==='Space'))gstate='MENU';
+  if(gstate==='PLAY'&&e.code==='Escape')gstate='MENU';
+  if(gstate==='WIN'&&(e.code==='Enter'||e.code==='Space')){initLevel();gstate='PLAY';}
+  if(gstate==='PLAY'){
+    if((e.code==='ArrowUp'||e.code==='KeyW')){
+      if(player.onGround)doJump();
+      else tryLadder(-1);
+    }
+    if((e.code==='ArrowDown'||e.code==='KeyS'))tryLadder(1);
+    if(e.code==='Space'&&player.onGround)doJump();
+  }
+});
+document.addEventListener('keyup',e=>{delete keys[e.code];});
+
+canvas.addEventListener('click',e=>{
+  const r=canvas.getBoundingClientRect();
+  const mx=(e.clientX-r.left)/scaleX(), my=(e.clientY-r.top)/scaleY();
+  if(inBackBtn(mx,my)){window.location.href='index.html';return;}
+  if(gstate==='MENU')for(let i=0;i<3;i++)if(inDiffBtn(i,mx,my))startGame(i);
+  if(gstate==='GAMEOVER')gstate='MENU';
+  if(gstate==='WIN'){initLevel();gstate='PLAY';}
+});
+
+function inDiffBtn(i,mx,my){const bx=LW/2-160,by=270+i*62;return mx>=bx&&mx<=bx+320&&my>=by&&my<=by+48;}
+function inBackBtn(mx,my){return mx>=BACK_BTN.x&&mx<=BACK_BTN.x+BACK_BTN.w&&my>=BACK_BTN.y&&my<=BACK_BTN.y+BACK_BTN.h;}
+const rnd=(a,b)=>a+Math.random()*(b-a);
+const clamp=(v,lo,hi)=>Math.max(lo,Math.min(hi,v));
+
+function getLevelConfig(){return LEVEL_CONFIGS[Math.min(level-1,LEVEL_CONFIGS.length-1)];}
+function getFloors(){return getLevelConfig().floors;}
+function getLadders(){return getLevelConfig().ladders;}
+function getSpawnRate(){
+  const mult=LEVEL_SPAWN_MULTS[Math.min(level-1,LEVEL_SPAWN_MULTS.length-1)];
+  return Math.max(10,Math.floor(diff.spawnRate*mult));
 }
-function inBackBtn(mx, my) {
-  return mx >= BACK_BTN.x && mx <= BACK_BTN.x+BACK_BTN.w &&
-         my >= BACK_BTN.y && my <= BACK_BTN.y+BACK_BTN.h;
+function getBarrelSpd(){
+  const mult=LEVEL_SPD_MULTS[Math.min(level-1,LEVEL_SPD_MULTS.length-1)];
+  return diff.barrelSpd*mult;
+}
+function getMaxBarrels(){return Math.min(diff.maxBarrels+level-1,12);}
+
+function startGame(idx){
+  diff=DIFFS[idx]; score=0; lives=3; level=1;
+  initLevel();
+  gstate='PLAY';
 }
 
-const rnd = (a,b) => a + Math.random()*(b-a);
-const clamp = (v,lo,hi) => Math.max(lo, Math.min(hi,v));
-
-function startGame(idx) {
-  diff = DIFFS[idx]; score = 0; lives = 3;
-  barrels = []; particles = []; spawnTimer = 0;
-  resetPlayer();
-  gstate = 'PLAY';
+function initLevel(){
+  const floors=getFloors();
+  barrels=[];particles=[];spawnTimer=0;
+  malletItem={visible:false,x:0,y:0,despawnTimer:0};
+  playerMallet={active:false,timer:0};
+  malletSpawnTimer=0;
+  const bf=floors[0];
+  player.x=(bf.x1+bf.x2)/2-PLAYER_W/2;
+  player.y=bf.y-PLAYER_H;
+  player.vx=0;player.vy=0;player.onGround=true;player.floorIdx=0;
+  player.facingRight=true;player.invincible=0;
 }
 
-function resetPlayer() {
-  const f = FLOORS[0];
-  player.x = f.x1 + 40;
-  player.y = f.y - PLAYER_H;
-  player.vx = 0; player.vy = 0;
-  player.onGround = true; player.onLadder = false;
-  player.floorIdx = 0; player.invincible = 90;
+function doJump(){
+  player.vy=JUMP_VEL;
+  player.onGround=false;
 }
 
-// ─── Pixel Sprite ─────────────────────────────────────────────────────────────
-function drawSprite(map, x, y, px, color) {
-  ctx.fillStyle = color;
-  for (let r = 0; r < map.length; r++) {
-    for (let c = 0; c < map[r].length; c++) {
-      if (map[r][c] !== ' ') {
-        ctx.fillRect(x + c*px, y + r*px, px, px);
+function tryLadder(dir){
+  const ladders=getLadders();
+  const floors=getFloors();
+  const pcx=player.x+PLAYER_W/2;
+  for(const lad of ladders){
+    if(Math.abs(pcx-lad.x)<20){
+      if(dir===-1&&player.floorIdx===lad.f&&lad.f+1<floors.length){
+        const tf=floors[lad.f+1];
+        player.x=lad.x-PLAYER_W/2;
+        player.y=tf.y-PLAYER_H;
+        player.vy=0;player.vx=0;player.onGround=true;player.floorIdx=lad.f+1;
+        return;
+      }
+      if(dir===1&&player.floorIdx===lad.f+1){
+        const tf=floors[lad.f];
+        player.x=lad.x-PLAYER_W/2;
+        player.y=tf.y-PLAYER_H;
+        player.vy=0;player.vx=0;player.onGround=true;player.floorIdx=lad.f;
+        return;
       }
     }
   }
 }
 
-const GORILLA_SPRITE = [
-  ' XXXXX ',
-  'XXXXXXX',
-  'X X X X',
-  'XXXXXXX',
-  ' XXXXX ',
-  'XX   XX',
-  'X     X',
-];
-
-const PLAYER_SPRITE_R = [
-  ' XX ',
-  'XXXX',
-  ' XX ',
-  'X  X',
-  'X  X',
-];
-
-const PLAYER_SPRITE_L = [
-  ' XX ',
-  'XXXX',
-  ' XX ',
-  'X  X',
-  'X  X',
-];
-
-function drawGorilla() {
-  const f3 = FLOORS[3];
-  const gx = f3.x2 - 60, gy = f3.y - 56;
-  ctx.save();
-  ctx.shadowBlur = 18; ctx.shadowColor = CLR.orange;
-  drawSprite(GORILLA_SPRITE, gx, gy, 8, CLR.orange);
-  // animate throw
-  if (gorillaThrow > 0) {
-    ctx.fillStyle = CLR.enemy;
-    ctx.shadowColor = CLR.enemy;
-    ctx.beginPath();
-    ctx.arc(gx - 16, gy + 16, 8, 0, Math.PI*2);
-    ctx.fill();
-    gorillaThrow--;
+function burst(x,y,color,n){
+  for(let i=0;i<n;i++){
+    if(particles.length>=80)break;
+    const spd=rnd(1.5,5),a=rnd(0,Math.PI*2);
+    particles.push({x,y,dx:Math.cos(a)*spd,dy:Math.sin(a)*spd,life:1.0,decay:rnd(0.02,0.05),r:rnd(2,5),color});
   }
-  ctx.restore();
 }
-
-function drawPlayerSprite() {
-  if (player.invincible > 0 && Math.floor(player.invincible / 4) % 2 === 0) return;
-  ctx.save();
-  ctx.shadowBlur = 14; ctx.shadowColor = CLR.player;
-  const sprite = player.facingRight ? PLAYER_SPRITE_R : PLAYER_SPRITE_L;
-  drawSprite(sprite, player.x, player.y, 5, CLR.player);
-  ctx.restore();
+function tickParticles(){
+  particles.forEach(p=>{p.x+=p.dx;p.y+=p.dy;p.dx*=0.93;p.dy*=0.93;p.life-=p.decay;});
+  particles=particles.filter(p=>p.life>0);
 }
-
-function drawPlatforms() {
-  FLOORS.forEach((f, i) => {
-    ctx.save();
-    ctx.shadowBlur = 12; ctx.shadowColor = CLR.orange + '88';
-    ctx.fillStyle = '#331100';
-    ctx.fillRect(f.x1, f.y, f.x2 - f.x1, 12);
-    ctx.shadowBlur = 6; ctx.shadowColor = CLR.orange;
-    ctx.fillStyle = CLR.orange;
-    ctx.fillRect(f.x1, f.y, f.x2 - f.x1, 3);
-    ctx.fillRect(f.x1, f.y + 9, f.x2 - f.x1, 3);
-    ctx.restore();
-    // rivets
-    ctx.fillStyle = '#ff880066';
-    for (let rx = f.x1 + 20; rx < f.x2; rx += 40) {
-      ctx.fillRect(rx, f.y + 4, 4, 4);
-    }
-  });
-}
-
-function drawLadders() {
-  LADDERS.forEach(l => {
-    const f1 = FLOORS[l.fromFloor];
-    const f2 = FLOORS[l.fromFloor + 1];
-    const lx = l.x;
-    const y1 = f2.y + 12;
-    const y2 = f1.y;
-    ctx.save();
-    ctx.shadowBlur = 6; ctx.shadowColor = '#ffcc44';
-    ctx.strokeStyle = '#ffcc44'; ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.moveTo(lx, y1); ctx.lineTo(lx, y2); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(lx + LADDER_W, y1); ctx.lineTo(lx + LADDER_W, y2); ctx.stroke();
-    ctx.lineWidth = 2; ctx.strokeStyle = '#aa8822';
-    for (let y = y2; y > y1; y -= 18) {
-      ctx.beginPath(); ctx.moveTo(lx, y); ctx.lineTo(lx + LADDER_W, y); ctx.stroke();
-    }
+function drawParticles(){
+  if(!particles.length)return;
+  const byColor={};
+  particles.forEach(p=>{if(!byColor[p.color])byColor[p.color]=[];byColor[p.color].push(p);});
+  Object.entries(byColor).forEach(([col,ps])=>{
+    ctx.save();ctx.shadowBlur=8;ctx.shadowColor=col;ctx.fillStyle=col;
+    ps.forEach(p=>{const r=p.r*p.life;if(r>0){ctx.globalAlpha=p.life;ctx.beginPath();ctx.arc(p.x,p.y,r,0,Math.PI*2);ctx.fill();}});
     ctx.restore();
   });
 }
 
-function drawBarrels() {
-  barrels.forEach(b => {
-    const angle = b.x * 0.05;
-    ctx.save();
-    ctx.translate(b.x, b.y);
-    ctx.rotate(angle * b.dir);
-    ctx.shadowBlur = 14; ctx.shadowColor = CLR.enemy;
-    ctx.fillStyle = CLR.enemy;
-    ctx.beginPath(); ctx.arc(0, 0, BARREL_R, 0, Math.PI*2); ctx.fill();
-    ctx.fillStyle = '#ff000044';
-    ctx.beginPath(); ctx.arc(0, 0, BARREL_R - 2, 0, Math.PI*2); ctx.fill();
-    ctx.strokeStyle = '#ffaaaa'; ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.moveTo(-7, 0); ctx.lineTo(7, 0); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(0, -7); ctx.lineTo(0, 7); ctx.stroke();
-    ctx.restore();
-  });
+function loseLife(){
+  if(player.invincible>0)return;
+  burst(player.x+PLAYER_W/2,player.y+PLAYER_H/2,CLR.player,20);
+  lives--;
+  if(lives<=0){gstate='GAMEOVER';return;}
+  player.invincible=120;
+  const floors=getFloors();
+  const bf=floors[0];
+  player.x=(bf.x1+bf.x2)/2-PLAYER_W/2;
+  player.y=bf.y-PLAYER_H;
+  player.vx=0;player.vy=0;player.onGround=true;player.floorIdx=0;
+  barrels=[];spawnTimer=0;
 }
 
-function drawHUD() {
-  ctx.save();
-  ctx.font = 'bold 18px Courier New';
-  ctx.textBaseline = 'top'; ctx.textAlign = 'left';
-  ctx.fillStyle = CLR.ui; ctx.shadowBlur = 12; ctx.shadowColor = CLR.ui;
-  ctx.fillText(`SCORE: ${score}`, 20, 12);
-  ctx.textAlign = 'right';
-  ctx.fillStyle = CLR.orange; ctx.shadowColor = CLR.orange;
-  ctx.fillText(`LIVES: ${lives}`, LW - 20, 12);
-  if (diff) {
-    ctx.textAlign = 'center';
-    ctx.fillStyle = diff.color; ctx.shadowColor = diff.color;
-    ctx.font = 'bold 13px Courier New';
-    ctx.fillText(diff.label, LW/2, 12);
-  }
-  ctx.restore();
-}
-
-function drawScanlines() {
-  ctx.save(); ctx.globalAlpha = 0.04; ctx.fillStyle = '#000';
-  for (let y = 0; y < LH; y += 3) ctx.fillRect(0, y, LW, 1);
-  ctx.restore();
-}
-
-function drawBackBtn() {
-  const hov = inBackBtn(logMX, logMY);
-  ctx.save();
-  ctx.font = 'bold 11px Courier New'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  ctx.fillStyle = hov ? CLR.orange : CLR.dim;
-  ctx.shadowBlur = hov ? 12 : 0; ctx.shadowColor = CLR.orange;
-  ctx.fillText('← ARCADE', BACK_BTN.x, BACK_BTN.y + BACK_BTN.h/2);
-  ctx.restore();
-}
-
-function drawCursor(cx, cy) {
-  const p = 2, fg = CLR.cursor, dk = CLR.bg;
-  ctx.save();
-  ctx.translate(Math.round(cx), Math.round(cy));
-  ctx.shadowBlur = 10; ctx.shadowColor = fg;
-  const dot = (c, r, col = fg) => { ctx.fillStyle = col; ctx.fillRect(c*p, r*p, p, p); };
-  dot(-2,-6); dot(-2,-5); dot(1,-6); dot(1,-5);
-  for(let c=-2;c<=2;c++) dot(c,-4);
-  for(let c=-2;c<=2;c++) dot(c,-3);
-  dot(-2,-2); dot(-1,-2,dk); dot(0,-2); dot(1,-2,dk); dot(2,-2);
-  for(let c=-2;c<=2;c++) dot(c,-1);
-  dot(-1,0); dot(0,0); dot(1,0); dot(0,1);
-  for(let c=-1;c<=1;c++) dot(c,2);
-  for(let c=-1;c<=1;c++) dot(c,3);
-  for(let c=-1;c<=1;c++) dot(c,4);
-  dot(-2,5); dot(-1,5); dot(1,5); dot(2,5);
-  dot(2,3); dot(3,4); dot(3,5); dot(2,6); dot(2,7);
-  ctx.restore();
-}
-
-function label(text, x, y, size, color, align = 'center') {
-  ctx.save();
-  ctx.font = `bold ${size}px Courier New`;
-  ctx.fillStyle = color; ctx.textAlign = align; ctx.textBaseline = 'middle';
-  ctx.shadowBlur = 16; ctx.shadowColor = color;
-  ctx.fillText(text, x, y);
-  ctx.restore();
-}
-
-// ─── Burst ────────────────────────────────────────────────────────────────────
-function burst(x, y, color, n) {
-  for (let i = 0; i < n; i++) {
-    const spd = rnd(1.5,5), a = rnd(0, Math.PI*2);
-    particles.push({x,y, dx:Math.cos(a)*spd, dy:Math.sin(a)*spd,
-                    life:1.0, decay:rnd(0.02,0.05), r:rnd(2,5), color});
-  }
-}
-function tickParticles() {
-  particles.forEach(p => { p.x+=p.dx; p.y+=p.dy; p.dx*=0.93; p.dy*=0.93; p.life-=p.decay; });
-  particles = particles.filter(p => p.life > 0);
-}
-function drawParticles() {
-  particles.forEach(p => {
-    const r = p.r * p.life; if(r<=0) return;
-    ctx.save(); ctx.globalAlpha = p.life; ctx.shadowBlur = 8; ctx.shadowColor = p.color;
-    ctx.fillStyle = p.color; ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI*2); ctx.fill();
-    ctx.restore();
-  });
-}
-
-// ─── Ladder overlap detection ─────────────────────────────────────────────────
-function getOverlappingLadder() {
-  const pcx = player.x + PLAYER_W/2;
-  for (const l of LADDERS) {
-    const f1 = FLOORS[l.fromFloor];
-    const f2 = FLOORS[l.fromFloor + 1];
-    if (pcx >= l.x - 2 && pcx <= l.x + LADDER_W + 2 &&
-        player.y + PLAYER_H >= f2.y && player.y <= f1.y) {
-      return l;
+function updateMallet(){
+  if(!playerMallet.active){
+    malletSpawnTimer++;
+    if(malletSpawnTimer>=1500&&!malletItem.visible){
+      const floors=getFloors();
+      const fi=Math.floor(Math.random()*(floors.length-1));
+      const fl=floors[fi];
+      malletItem.visible=true;
+      malletItem.x=fl.x1+(fl.x2-fl.x1)*0.3+rnd(0,(fl.x2-fl.x1)*0.4);
+      malletItem.y=fl.y-18;
+      malletItem.despawnTimer=480;
+      malletSpawnTimer=0;
     }
   }
-  return null;
-}
-
-// ─── Floor collision ──────────────────────────────────────────────────────────
-function snapToFloor(f) {
-  player.y = f.y - PLAYER_H;
-  player.vy = 0;
-  player.onGround = true;
-}
-
-function getFloorBelow() {
-  let best = null, bestDist = Infinity;
-  FLOORS.forEach((f, i) => {
-    const playerBottom = player.y + PLAYER_H;
-    const dist = f.y - playerBottom;
-    const pcx = player.x + PLAYER_W/2;
-    if (dist >= -2 && dist < 40 && pcx >= f.x1 && pcx <= f.x2) {
-      if (dist < bestDist) { bestDist = dist; best = { f, i }; }
+  if(malletItem.visible){
+    malletItem.despawnTimer--;
+    if(malletItem.despawnTimer<=0)malletItem.visible=false;
+    const dx=Math.abs(player.x+PLAYER_W/2-malletItem.x);
+    const dy=Math.abs(player.y+PLAYER_H/2-malletItem.y);
+    if(dx<24&&dy<24){
+      malletItem.visible=false;
+      playerMallet.active=true;
+      playerMallet.timer=600;
     }
-  });
-  return best;
-}
-
-function isOnFloor(f) {
-  const playerBottom = player.y + PLAYER_H;
-  const pcx = player.x + PLAYER_W/2;
-  return Math.abs(playerBottom - f.y) < 4 && pcx >= f.x1 && pcx <= f.x2;
-}
-
-// ─── Update ───────────────────────────────────────────────────────────────────
-function updateGame() {
-  frameCount++;
-  const ladder = getOverlappingLadder();
-  const up    = keys['ArrowUp']   || keys['KeyW'];
-  const down  = keys['ArrowDown'] || keys['KeyS'];
-  const left  = keys['ArrowLeft'] || keys['KeyA'];
-  const right = keys['ArrowRight']|| keys['KeyD'];
-  const jump  = keys['Space'] || up;
-
-  // Ladder logic
-  if (ladder && (up || down)) {
-    player.onLadder = true;
   }
-  if (!ladder) player.onLadder = false;
-
-  if (player.onLadder && ladder) {
-    player.vx = 0;
-    player.vy = 0;
-    if (up)   player.y -= 2.5;
-    if (down) player.y += 2.5;
-    player.onGround = false;
-
-    // Snap to ladder x
-    player.x = ladder.x + LADDER_W/2 - PLAYER_W/2;
-
-    // Check if we reached top floor
-    const f2 = FLOORS[ladder.fromFloor + 1];
-    if (player.y + PLAYER_H <= f2.y + 4) {
-      // Landed on upper floor
-      player.y = f2.y - PLAYER_H;
-      player.onLadder = false; player.onGround = true;
-    }
-    // Check if we went down to lower floor
-    const f1 = FLOORS[ladder.fromFloor];
-    if (player.y + PLAYER_H >= f1.y + 6) {
-      player.y = f1.y - PLAYER_H;
-      player.onLadder = false; player.onGround = true;
-    }
-  } else {
-    // Horizontal movement
-    if (left)  { player.vx = -3.5; player.facingRight = false; }
-    else if (right) { player.vx = 3.5; player.facingRight = true; }
-    else player.vx = 0;
-
-    // Jump
-    if ((keys['Space'] || (up && player.onGround)) && player.onGround) {
-      player.vy = JUMP_VEL;
-      player.onGround = false;
-    }
-
-    // Gravity
-    if (!player.onGround) player.vy += GRAVITY;
-
-    player.x += player.vx;
-    player.y += player.vy;
-
-    // Floor collision
-    player.onGround = false;
-    FLOORS.forEach(f => {
-      const pcx = player.x + PLAYER_W/2;
-      if (pcx >= f.x1 && pcx <= f.x2) {
-        if (player.y + PLAYER_H >= f.y && player.y + PLAYER_H <= f.y + 14 && player.vy >= 0) {
-          snapToFloor(f);
-        }
-      }
-    });
-
-    // Floor boundaries (horizontal)
-    FLOORS.forEach(f => {
-      if (isOnFloor(f)) {
-        player.x = clamp(player.x, f.x1, f.x2 - PLAYER_W);
-      }
-    });
-  }
-
-  // Top / bottom bounds
-  player.y = clamp(player.y, 40, LH - PLAYER_H);
-  if (player.y >= LH - PLAYER_H) {
-    // Fell off — reset
-    loseLife();
-  }
-
-  // Check win (reached floor 3)
-  const f3 = FLOORS[3];
-  const pcx = player.x + PLAYER_W/2;
-  if (isOnFloor(f3) && pcx > f3.x1 + 10) {
-    score += 5000;
-    gstate = 'WIN';
-    return;
-  }
-
-  // Spawn barrels
-  spawnTimer++;
-  if (spawnTimer >= diff.spawnRate) {
-    spawnTimer = 0;
-    const f3 = FLOORS[3];
-    barrels.push({ x: f3.x2 - 70, y: f3.y - BARREL_R - 3, vy: 0,
-                   floor: 3, dir: -1, spd: diff.barrelSpd });
-    gorillaThrow = 18;
-  }
-
-  // Update barrels
-  barrels = barrels.filter(b => {
-    b.x += b.dir * b.spd;
-    b.vy += GRAVITY * 0.5;
-    b.y += b.vy;
-
-    // Floor bounce/transition
-    FLOORS.forEach((f, fi) => {
-      if (b.y + BARREL_R >= f.y && b.y < f.y + 16 && b.vy > 0) {
-        b.y = f.y - BARREL_R;
-        b.vy = 0;
-        b.floor = fi;
-        // Reverse at edges
-        if (b.x < f.x1 + 10 && b.dir < 0) {
-          if (fi > 0) { b.floor = fi - 1; b.vy = 2; } else b.dir = 1;
-        }
-        if (b.x > f.x2 - 10 && b.dir > 0) {
-          if (fi > 0) { b.floor = fi - 1; b.vy = 2; } else b.dir = -1;
-        }
-      }
-    });
-
-    // Reverse direction based on floor boundaries
-    const cf = FLOORS[b.floor];
-    if (b.floor >= 0 && cf) {
-      if (b.x < cf.x1 + 5 && b.dir < 0) {
-        if (b.floor > 0) { b.vy = 3; }
-        else { b.dir = 1; }
-      }
-      if (b.x > cf.x2 - 5 && b.dir > 0) {
-        if (b.floor > 0) { b.vy = 3; }
-        else { b.dir = -1; }
-      }
-    }
-
-    // Off screen removal
-    if (b.x < -30 || b.x > LW + 30 || b.y > LH + 30) return false;
-
-    // Collision with player
-    if (player.invincible <= 0) {
-      const dx = (player.x + PLAYER_W/2) - b.x;
-      const dy = (player.y + PLAYER_H/2) - b.y;
-      if (Math.sqrt(dx*dx + dy*dy) < BARREL_R + PLAYER_W/2) {
-        burst(b.x, b.y, CLR.enemy, 16);
-        loseLife();
+  if(playerMallet.active){
+    playerMallet.timer--;
+    const swingX=player.facingRight?player.x+PLAYER_W+28:player.x-28;
+    const swingY=player.y+PLAYER_H/2;
+    barrels=barrels.filter(b=>{
+      if(Math.abs(b.x-swingX)<38&&Math.abs(b.y-swingY)<22){
+        burst(b.x,b.y,CLR.ui,10);
+        score+=300;
         return false;
       }
+      return true;
+    });
+    if(playerMallet.timer<=0)playerMallet.active=false;
+  }
+}
+
+function updatePlayer(){
+  const floors=getFloors();
+  if(player.invincible>0)player.invincible--;
+
+  if(keys['ArrowLeft']||keys['KeyA']){player.x-=3;player.facingRight=false;}
+  if(keys['ArrowRight']||keys['KeyD']){player.x+=3;player.facingRight=true;}
+
+  if(!player.onGround){
+    player.vy+=GRAVITY;
+    player.y+=player.vy;
+  }
+
+  player.onGround=false;
+  for(let fi=0;fi<floors.length;fi++){
+    const fl=floors[fi];
+    const pcx=player.x+PLAYER_W/2;
+    if(pcx>=fl.x1&&pcx<=fl.x2){
+      const pby=player.y+PLAYER_H;
+      if(pby>=fl.y-2&&pby<=fl.y+12&&player.vy>=0){
+        player.y=fl.y-PLAYER_H;
+        player.vy=0;
+        player.onGround=true;
+        player.floorIdx=fi;
+        break;
+      }
+    }
+  }
+
+  if(player.onGround&&player.floorIdx<floors.length){
+    const fl=floors[player.floorIdx];
+    player.x=clamp(player.x,fl.x1,fl.x2-PLAYER_W);
+  }
+
+  if(player.y>LH+60)loseLife();
+}
+
+function updateBarrels(){
+  const floors=getFloors();
+  const ladders=getLadders();
+  const spd=getBarrelSpd();
+  const maxB=getMaxBarrels();
+  const rate=getSpawnRate();
+
+  spawnTimer++;
+  if(spawnTimer>=rate&&barrels.length<maxB){
+    spawnTimer=0;
+    const topFloor=floors[floors.length-1];
+    barrels.push({
+      x:topFloor.x2-25,
+      y:topFloor.y-10,
+      dir:-1,
+      spd:spd,
+      floor:floors.length-1,
+      vy:0,
+      state:'ROLL',
+      scored:false
+    });
+  }
+
+  barrels=barrels.filter(b=>{
+    if(b.state==='ROLL'){
+      b.x+=b.dir*b.spd;
+      const fl=floors[b.floor];
+      let fell=false;
+
+      if(Math.random()<0.0025)fell=true;
+      if(!fell&&b.dir<0&&b.x<fl.x1)fell=true;
+      if(!fell&&b.dir>0&&b.x>fl.x2)fell=true;
+
+      if(!fell){
+        for(const lad of ladders){
+          if(lad.f===b.floor&&Math.abs(b.x-lad.x)<12&&Math.random()<0.35){
+            fell=true;break;
+          }
+        }
+      }
+
+      if(fell){b.state='FALL';b.vy=1;}
+    } else if(b.state==='FALL'){
+      b.vy+=0.5;
+      b.y+=b.vy;
+      b.x+=b.dir*b.spd*0.25;
+
+      for(let fi=0;fi<floors.length;fi++){
+        if(fi===b.floor)continue;
+        const fl=floors[fi];
+        if(b.x>=fl.x1&&b.x<=fl.x2&&b.y>=fl.y-2&&b.y<=fl.y+14&&b.vy>0){
+          b.y=fl.y-8;
+          b.vy=0;
+          b.state='ROLL';
+          b.floor=fi;
+          break;
+        }
+      }
+
+      if(b.y>LH+40)return false;
     }
 
-    // Score for jumping over barrel
-    if (b.y + BARREL_R < player.y - 2 && b.x > player.x - 10 && b.x < player.x + PLAYER_W + 10) {
-      // Only score once per barrel — tag it
-      if (!b.scored) { b.scored = true; score += 100; }
+    if(!b.scored&&player.vy<0){
+      const pcx=player.x+PLAYER_W/2;
+      const pcy=player.y+PLAYER_H;
+      if(Math.abs(b.x-pcx)<32&&Math.abs(b.y-pcy)<22){
+        score+=100;b.scored=true;
+      }
+    }
+
+    if(player.invincible===0){
+      const pcx=player.x+PLAYER_W/2;
+      const pcy=player.y+PLAYER_H/2;
+      if(Math.sqrt((b.x-pcx)**2+(b.y-pcy)**2)<18)loseLife();
     }
 
     return true;
   });
+}
 
-  if (player.invincible > 0) player.invincible--;
+function checkWin(){
+  const floors=getFloors();
+  const topFloor=floors[floors.length-1];
+  const pcx=player.x+PLAYER_W/2;
+  if(player.floorIdx===floors.length-1&&pcx>=topFloor.x1+20&&pcx<=topFloor.x2-20){
+    score+=3000*level;
+    level++;
+    if(level>LEVEL_CONFIGS.length)level=LEVEL_CONFIGS.length;
+    burst(player.x+PLAYER_W/2,player.y,CLR.ui,30);
+    gstate='WIN';winTimer=120;
+  }
+}
+
+function updateGame(){
+  frameCount++;
+  updatePlayer();
+  updateBarrels();
+  updateMallet();
   tickParticles();
+  checkWin();
 }
 
-function loseLife() {
-  lives--;
-  burst(player.x + PLAYER_W/2, player.y + PLAYER_H/2, CLR.player, 20);
-  if (lives <= 0) { gstate = 'GAMEOVER'; return; }
-  resetPlayer();
-}
-
-// ─── Draw ──────────────────────────────────────────────────────────────────────
-function drawMenu() {
-  const grad = ctx.createRadialGradient(LW/2, LH/2, 80, LW/2, LH/2, 500);
-  grad.addColorStop(0, '#110500'); grad.addColorStop(1, CLR.bg);
-  ctx.fillStyle = grad; ctx.fillRect(0, 0, LW, LH);
+function drawFloors(){
+  const floors=getFloors();
+  const ladders=getLadders();
+  ctx.save();
+  ctx.strokeStyle=CLR.orange;ctx.lineWidth=4;
+  ctx.shadowBlur=8;ctx.shadowColor=CLR.orange+'88';
+  floors.forEach(fl=>{
+    ctx.beginPath();ctx.moveTo(fl.x1,fl.y);ctx.lineTo(fl.x2,fl.y);ctx.stroke();
+  });
+  ctx.restore();
 
   ctx.save();
-  ctx.font = 'bold 96px Courier New'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  const pulse = 0.8 + 0.2 * Math.sin(Date.now()/600);
-  ctx.shadowBlur = 55 * pulse; ctx.shadowColor = CLR.orange; ctx.fillStyle = CLR.orange;
-  ctx.fillText('APE CLIMB', LW/2, 130);
+  ladders.forEach(lad=>{
+    const f0=floors[lad.f],f1=floors[lad.f+1];
+    if(!f1)return;
+    ctx.strokeStyle='#885500';ctx.lineWidth=3;
+    ctx.beginPath();ctx.moveTo(lad.x-6,f0.y);ctx.lineTo(lad.x-6,f1.y);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(lad.x+6,f0.y);ctx.lineTo(lad.x+6,f1.y);ctx.stroke();
+    ctx.lineWidth=2;
+    for(let ry=f1.y+8;ry<f0.y;ry+=14){
+      ctx.beginPath();ctx.moveTo(lad.x-6,ry);ctx.lineTo(lad.x+6,ry);ctx.stroke();
+    }
+  });
   ctx.restore();
-  label('SELECT DIFFICULTY', LW/2, 230, 18, CLR.ui);
-  DIFFS.forEach((d, i) => {
-    const bx = LW/2-160, by = 270+i*62, bw = 320, bh = 48;
-    const hov = inDiffBtn(i, logMX, logMY);
-    ctx.save();
-    ctx.shadowBlur = hov ? 35 : 14; ctx.shadowColor = d.color;
-    if (hov) { ctx.fillStyle = d.color+'18'; ctx.beginPath(); ctx.roundRect(bx,by,bw,bh,6); ctx.fill(); }
-    ctx.globalAlpha = hov ? 1.0 : 0.65; ctx.strokeStyle = d.color; ctx.lineWidth = hov ? 2.5 : 1.5;
-    ctx.beginPath(); ctx.roundRect(bx,by,bw,bh,6); ctx.stroke(); ctx.restore();
-    ctx.save(); ctx.globalAlpha = hov ? 1.0 : 0.7;
-    label(`${i+1}  ${d.label}`, LW/2, by+bh/2, hov ? 24 : 21, d.color);
-    if (hov) label('▶', bx+18, by+bh/2, 14, d.color);
+}
+
+function drawGorilla(){
+  const floors=getFloors();
+  const topFloor=floors[floors.length-1];
+  const gx=topFloor.x2-50,gy=topFloor.y-40;
+  const arm=Math.sin(frameCount*0.08)*4;
+  ctx.save();
+  ctx.fillStyle=CLR.orange;ctx.shadowBlur=14;ctx.shadowColor=CLR.orange;
+  ctx.beginPath();ctx.arc(gx+14,gy+8,11,0,Math.PI*2);ctx.fill();
+  ctx.fillRect(gx,gy+16,28,24);
+  ctx.fillRect(gx-14,gy+18+arm,14,8);
+  ctx.fillRect(gx+28,gy+18-arm,12,8);
+  ctx.shadowBlur=0;ctx.fillStyle='#000';
+  ctx.fillRect(gx+7,gy+4,3,3);ctx.fillRect(gx+18,gy+4,3,3);
+  ctx.restore();
+}
+
+function drawPlayer(){
+  const blink=player.invincible>0&&Math.floor(frameCount/4)%2===0;
+  if(blink)return;
+  ctx.save();
+  ctx.fillStyle=CLR.player;ctx.shadowBlur=12;ctx.shadowColor=CLR.player;
+  ctx.beginPath();ctx.arc(player.x+PLAYER_W/2,player.y+6,7,0,Math.PI*2);ctx.fill();
+  ctx.fillRect(player.x+2,player.y+10,PLAYER_W-4,PLAYER_H-10);
+  ctx.shadowBlur=0;ctx.fillStyle='#0099bb';
+  ctx.fillRect(player.x+2,player.y+PLAYER_H-6,5,6);
+  ctx.fillRect(player.x+PLAYER_W-7,player.y+PLAYER_H-6,5,6);
+  if(playerMallet.active){
+    const swing=Math.sin(frameCount*0.5)*0.5;
+    const mx=player.facingRight?player.x+PLAYER_W+2:player.x-18;
+    ctx.save();ctx.translate(mx+8,player.y+6);
+    ctx.rotate(player.facingRight?swing+0.3:-swing-0.3);
+    ctx.fillStyle=CLR.ui;ctx.shadowBlur=14;ctx.shadowColor=CLR.ui;
+    ctx.fillRect(-3,-14,6,14);ctx.fillRect(-9,-22,18,10);
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
+function drawBarrels(){
+  ctx.save();
+  barrels.forEach(b=>{
+    const bounce=b.state==='ROLL'?Math.sin(frameCount*0.35+b.x*0.04)*1.5:0;
+    const by=b.y-8+bounce;
+    ctx.fillStyle=CLR.orange;ctx.shadowBlur=8;ctx.shadowColor=CLR.orange;
+    ctx.beginPath();ctx.arc(b.x,by,8,0,Math.PI*2);ctx.fill();
+    ctx.shadowBlur=0;ctx.strokeStyle='#884400';ctx.lineWidth=1.5;
+    ctx.beginPath();ctx.ellipse(b.x,by-3,8,3,0,0,Math.PI*2);ctx.stroke();
+    ctx.beginPath();ctx.ellipse(b.x,by+3,8,3,0,0,Math.PI*2);ctx.stroke();
+  });
+  ctx.restore();
+}
+
+function drawMalletItem(){
+  if(!malletItem.visible)return;
+  if(malletItem.despawnTimer<120&&Math.floor(frameCount/6)%2===0)return;
+  const pulse=0.8+0.2*Math.sin(frameCount*0.12);
+  ctx.save();
+  ctx.fillStyle=CLR.ui;ctx.shadowBlur=16*pulse;ctx.shadowColor=CLR.ui;
+  ctx.fillRect(malletItem.x-4,malletItem.y+4,8,12);
+  ctx.fillRect(malletItem.x-11,malletItem.y-4,22,10);
+  ctx.restore();
+}
+
+function drawHUD(){
+  ctx.save();
+  ctx.font='bold 18px Courier New';ctx.textBaseline='top';
+  ctx.textAlign='left';ctx.fillStyle=CLR.ui;ctx.shadowBlur=12;ctx.shadowColor=CLR.ui;
+  ctx.fillText(`SCORE: ${score}`,20,12);
+  ctx.textAlign='right';ctx.fillStyle=CLR.enemy;ctx.shadowColor=CLR.enemy;
+  ctx.fillText(`LIVES: ${lives}`,LW-20,12);
+  ctx.textAlign='center';ctx.fillStyle=CLR.orange;ctx.shadowColor=CLR.orange;
+  ctx.fillText(`LEVEL ${level}`,LW/2,12);
+  if(diff){ctx.font='bold 12px Courier New';ctx.fillStyle=diff.color;ctx.shadowColor=diff.color;ctx.fillText(diff.label,LW/2,34);}
+  if(playerMallet.active){
+    const pct=playerMallet.timer/600;
+    ctx.font='bold 11px Courier New';ctx.textAlign='left';ctx.fillStyle=CLR.ui;ctx.shadowColor=CLR.ui;ctx.shadowBlur=8;
+    ctx.fillText('MALLET',20,34);
+    ctx.shadowBlur=0;ctx.fillStyle=CLR.ui+'33';ctx.fillRect(20,50,80,6);
+    ctx.fillStyle=CLR.ui;ctx.fillRect(20,50,80*pct,6);
+  }
+  ctx.restore();
+  ctx.save();ctx.font='bold 10px Courier New';ctx.textAlign='center';ctx.textBaseline='bottom';
+  ctx.fillStyle=CLR.dim;ctx.fillText('ARROWS/WASD · UP/DOWN NEAR LADDER TO CLIMB · REACH THE TOP',LW/2,LH-8);
+  ctx.restore();
+}
+
+let _sl=null;
+function drawScanlines(){
+  if(!_sl){_sl=document.createElement('canvas');_sl.width=LW;_sl.height=LH;const sc=_sl.getContext('2d');sc.fillStyle='rgba(0,0,0,0.05)';for(let y=0;y<LH;y+=3)sc.fillRect(0,y,LW,1);}
+  ctx.drawImage(_sl,0,0);
+}
+function drawBackBtn(){
+  const hov=inBackBtn(logMX,logMY);
+  ctx.save();ctx.font='bold 11px Courier New';ctx.textAlign='left';ctx.textBaseline='middle';
+  ctx.fillStyle=hov?CLR.orange:CLR.dim;ctx.shadowBlur=hov?12:0;ctx.shadowColor=CLR.orange;
+  ctx.fillText('← ARCADE',BACK_BTN.x,BACK_BTN.y+BACK_BTN.h/2);ctx.restore();
+}
+function drawCursor(cx,cy){
+  const p=2,fg=CLR.cursor,dk=CLR.bg;ctx.save();
+  ctx.translate(Math.round(cx),Math.round(cy));ctx.shadowBlur=10;ctx.shadowColor=fg;
+  const dot=(c,r,col=fg)=>{ctx.fillStyle=col;ctx.fillRect(c*p,r*p,p,p);};
+  dot(-2,-6);dot(-2,-5);dot(1,-6);dot(1,-5);
+  for(let c=-2;c<=2;c++)dot(c,-4);for(let c=-2;c<=2;c++)dot(c,-3);
+  dot(-2,-2);dot(-1,-2,dk);dot(0,-2);dot(1,-2,dk);dot(2,-2);
+  for(let c=-2;c<=2;c++)dot(c,-1);
+  dot(-1,0);dot(0,0);dot(1,0);dot(0,1);
+  for(let c=-1;c<=1;c++)dot(c,2);for(let c=-1;c<=1;c++)dot(c,3);for(let c=-1;c<=1;c++)dot(c,4);
+  dot(-2,5);dot(-1,5);dot(1,5);dot(2,5);dot(2,3);dot(3,4);dot(3,5);dot(2,6);dot(2,7);
+  ctx.restore();
+}
+function label(text,x,y,size,color,align='center'){
+  ctx.save();ctx.font=`bold ${size}px Courier New`;ctx.fillStyle=color;
+  ctx.textAlign=align;ctx.textBaseline='middle';ctx.shadowBlur=16;ctx.shadowColor=color;
+  ctx.fillText(text,x,y);ctx.restore();
+}
+
+function drawMenu(){
+  const grad=ctx.createRadialGradient(LW/2,LH/2,80,LW/2,LH/2,500);
+  grad.addColorStop(0,'#1a0a00');grad.addColorStop(1,CLR.bg);
+  ctx.fillStyle=grad;ctx.fillRect(0,0,LW,LH);
+  ctx.save();ctx.font='bold 90px Courier New';ctx.textAlign='center';ctx.textBaseline='middle';
+  const pulse=0.8+0.2*Math.sin(Date.now()/600);
+  ctx.shadowBlur=55*pulse;ctx.shadowColor=CLR.orange;ctx.fillStyle=CLR.orange;
+  ctx.fillText('APE CLIMB',LW/2,120);ctx.restore();
+  label('SELECT DIFFICULTY',LW/2,215,18,CLR.ui);
+  DIFFS.forEach((d,i)=>{
+    const bx=LW/2-160,by=270+i*62,bw=320,bh=48;
+    const hov=inDiffBtn(i,logMX,logMY);
+    ctx.save();ctx.shadowBlur=hov?35:14;ctx.shadowColor=d.color;
+    if(hov){ctx.fillStyle=d.color+'18';ctx.beginPath();ctx.roundRect(bx,by,bw,bh,6);ctx.fill();}
+    ctx.globalAlpha=hov?1:0.65;ctx.strokeStyle=d.color;ctx.lineWidth=hov?2.5:1.5;
+    ctx.beginPath();ctx.roundRect(bx,by,bw,bh,6);ctx.stroke();ctx.restore();
+    ctx.save();ctx.globalAlpha=hov?1:0.7;
+    label(`${i+1}  ${d.label}`,LW/2,by+bh/2,hov?24:21,d.color);
+    if(hov)label('▶',bx+18,by+bh/2,14,d.color);
     ctx.restore();
   });
-  label('ARROWS/WASD · SPACE TO JUMP · ESC = MENU', LW/2, LH-22, 12, CLR.dim);
-  drawBackBtn(); drawScanlines();
+  label('ARROWS/WASD · CLIMB LADDERS · REACH THE GORILLA',LW/2,LH-22,12,CLR.dim);
+  drawBackBtn();drawScanlines();
 }
 
-function drawPlay() {
-  ctx.fillStyle = CLR.bg; ctx.fillRect(0, 0, LW, LH);
-  // Background gradient
-  const grad = ctx.createLinearGradient(0, 0, 0, LH);
-  grad.addColorStop(0, '#000814'); grad.addColorStop(1, '#110500');
-  ctx.fillStyle = grad; ctx.fillRect(0, 0, LW, LH);
-
-  drawPlatforms();
-  drawLadders();
+function drawPlay(){
+  ctx.fillStyle=CLR.bg;ctx.fillRect(0,0,LW,LH);
+  drawFloors();
   drawGorilla();
+  drawMalletItem();
   drawBarrels();
-  drawPlayerSprite();
+  drawPlayer();
   drawParticles();
   drawHUD();
-  // Reach top indicator
-  ctx.save();
-  ctx.font = 'bold 11px Courier New'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillStyle = CLR.orange + '88'; ctx.shadowBlur = 0;
-  ctx.fillText('REACH THE TOP!', LW/2, FLOORS[3].y - 20);
-  ctx.restore();
-  drawBackBtn(); drawScanlines();
+  drawBackBtn();
+  drawScanlines();
 }
 
-function drawEndScreen(won) {
-  ctx.fillStyle = 'rgba(0,8,20,0.88)'; ctx.fillRect(0, 0, LW, LH);
+function drawWinScreen(){
+  ctx.fillStyle='rgba(0,8,20,0.82)';ctx.fillRect(0,0,LW,LH);
   drawParticles();
-  const color = won ? CLR.orange : CLR.enemy;
-  ctx.save();
-  ctx.font = 'bold 82px Courier New'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  const p = 0.75 + 0.25 * Math.sin(Date.now()/400);
-  ctx.shadowBlur = 65*p; ctx.shadowColor = color; ctx.fillStyle = color;
-  ctx.fillText(won ? 'YOU ESCAPED!' : 'GAME OVER', LW/2, LH/2 - 60);
-  ctx.restore();
-  label(`SCORE: ${score}`, LW/2, LH/2 + 20, 36, CLR.ui);
-  const blink = Math.floor(Date.now()/550)%2===0;
-  if (blink) label('CLICK OR ENTER TO CONTINUE', LW/2, LH/2+100, 16, CLR.ui);
-  drawBackBtn(); drawScanlines();
+  const p=0.75+0.25*Math.sin(Date.now()/400);
+  ctx.save();ctx.font='bold 68px Courier New';ctx.textAlign='center';ctx.textBaseline='middle';
+  ctx.shadowBlur=60*p;ctx.shadowColor=CLR.ui;ctx.fillStyle=CLR.ui;
+  ctx.fillText(`LEVEL ${level-1} COMPLETE!`,LW/2,LH/2-60);ctx.restore();
+  label(`SCORE: ${score}`,LW/2,LH/2+10,30,CLR.ui);
+  label(`LEVEL ${Math.min(level,LEVEL_CONFIGS.length)} UP NEXT`,LW/2,LH/2+55,20,CLR.orange);
+  const blink=Math.floor(Date.now()/550)%2===0;
+  if(blink)label('CLICK OR ENTER TO CONTINUE',LW/2,LH/2+100,16,CLR.ui);
+  drawBackBtn();drawScanlines();
 }
 
-function loop() {
-  ctx.clearRect(0, 0, CW, CH);
-  ctx.save(); ctx.scale(scaleX(), scaleY());
-  if      (gstate === 'MENU')     drawMenu();
-  else if (gstate === 'PLAY')     { updateGame(); drawPlay(); }
-  else if (gstate === 'WIN')      { tickParticles(); drawEndScreen(true); }
-  else if (gstate === 'GAMEOVER') { tickParticles(); drawEndScreen(false); }
+function drawGameover(){
+  ctx.fillStyle='rgba(0,8,20,0.88)';ctx.fillRect(0,0,LW,LH);
+  drawParticles();
+  const p=0.75+0.25*Math.sin(Date.now()/400);
+  ctx.save();ctx.font='bold 88px Courier New';ctx.textAlign='center';ctx.textBaseline='middle';
+  ctx.shadowBlur=70*p;ctx.shadowColor=CLR.enemy;ctx.fillStyle=CLR.enemy;
+  ctx.fillText('GAME OVER',LW/2,LH/2-60);ctx.restore();
+  label(`SCORE: ${score}`,LW/2,LH/2+10,36,CLR.ui);
+  label(`REACHED LEVEL ${level}`,LW/2,LH/2+55,20,CLR.dim);
+  if(diff)label(diff.label,LW/2,LH/2+90,18,diff.color);
+  const blink=Math.floor(Date.now()/550)%2===0;
+  if(blink)label('CLICK OR ENTER TO CONTINUE',LW/2,LH/2+130,16,CLR.ui);
+  drawBackBtn();drawScanlines();
+}
+
+function loop(){
+  frameCount++;
+  ctx.clearRect(0,0,CW,CH);
+  ctx.save();ctx.scale(scaleX(),scaleY());
+  if(gstate==='MENU')drawMenu();
+  else if(gstate==='PLAY'){updateGame();drawPlay();}
+  else if(gstate==='WIN'){tickParticles();drawWinScreen();}
+  else if(gstate==='GAMEOVER'){tickParticles();drawGameover();}
   ctx.restore();
-  drawCursor(rawMX, rawMY);
+  drawCursor(rawMX,rawMY);
   requestAnimationFrame(loop);
 }
 
-if (!CanvasRenderingContext2D.prototype.roundRect) {
-  CanvasRenderingContext2D.prototype.roundRect = function(x,y,w,h,r) {
-    r=Math.min(r,w/2,h/2); this.beginPath();
-    this.moveTo(x+r,y); this.arcTo(x+w,y,x+w,y+h,r); this.arcTo(x+w,y+h,x,y+h,r);
-    this.arcTo(x,y+h,x,y,r); this.arcTo(x,y,x+w,y,r); this.closePath();
+if(!CanvasRenderingContext2D.prototype.roundRect){
+  CanvasRenderingContext2D.prototype.roundRect=function(x,y,w,h,r){
+    r=Math.min(r,w/2,h/2);this.beginPath();this.moveTo(x+r,y);
+    this.arcTo(x+w,y,x+w,y+h,r);this.arcTo(x+w,y+h,x,y+h,r);
+    this.arcTo(x,y+h,x,y,r);this.arcTo(x,y,x+w,y,r);this.closePath();
   };
 }
 

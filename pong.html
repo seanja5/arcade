@@ -161,6 +161,7 @@ function predictY() {
 
 function burst(x, y, color, n) {
   for (let i = 0; i < n; i++) {
+    if(particles.length>=80)break;
     const spd = rnd(1.5, 5), a = rnd(0, Math.PI * 2);
     particles.push({ x, y, dx: Math.cos(a)*spd, dy: Math.sin(a)*spd,
                      life: 1.0, decay: rnd(0.02, 0.05), r: rnd(2, 5), color });
@@ -176,20 +177,15 @@ function tickParticles() {
   particles = particles.filter(p => p.life > 0);
 }
 
-function drawParticles() {
-  for (const p of particles) {
-    const r = p.r * p.life;
-    if (r <= 0) continue;
-    ctx.save();
-    ctx.globalAlpha = p.life;
-    ctx.shadowBlur  = 8;
-    ctx.shadowColor = p.color;
-    ctx.fillStyle   = p.color;
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
-    ctx.fill();
+function drawParticles(){
+  if(!particles.length)return;
+  const byColor={};
+  particles.forEach(p=>{if(!byColor[p.color])byColor[p.color]=[];byColor[p.color].push(p);});
+  Object.entries(byColor).forEach(([col,ps])=>{
+    ctx.save();ctx.shadowBlur=8;ctx.shadowColor=col;ctx.fillStyle=col;
+    ps.forEach(p=>{const r=p.r*p.life;if(r>0){ctx.globalAlpha=p.life;ctx.beginPath();ctx.arc(p.x,p.y,r,0,Math.PI*2);ctx.fill();}});
     ctx.restore();
-  }
+  });
 }
 
 function setGlow(color, blur) { ctx.shadowColor = color; ctx.shadowBlur = blur; }
@@ -244,10 +240,10 @@ function label(text, x, y, size, color, align = 'center') {
   ctx.restore();
 }
 
-function drawScanlines() {
-  ctx.save(); ctx.globalAlpha = 0.04; ctx.fillStyle = '#000';
-  for (let y = 0; y < LH; y += 3) ctx.fillRect(0, y, LW, 1);
-  ctx.restore();
+let _sl=null;
+function drawScanlines(){
+  if(!_sl){_sl=document.createElement('canvas');_sl.width=LW;_sl.height=LH;const sc=_sl.getContext('2d');sc.fillStyle='rgba(0,0,0,0.05)';for(let y=0;y<LH;y+=3)sc.fillRect(0,y,LW,1);}
+  ctx.drawImage(_sl,0,0);
 }
 
 function drawBackBtn() {

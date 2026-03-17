@@ -61,6 +61,24 @@ const ALIEN_SPRITES = [
 
 const ALIEN_COLORS = ['#ff2d78', '#ff8800', '#39ff14'];
 
+// Pre-render alien sprites to offscreen canvases
+const ALIEN_IMGS = ALIEN_SPRITES.map((sprite,type)=>{
+  return [0,1].map(frame=>{
+    const oc=document.createElement('canvas');
+    oc.width=ALIEN_W;oc.height=ALIEN_H;
+    const oc2=oc.getContext('2d');
+    oc2.fillStyle=ALIEN_COLORS[type];
+    const px=4;
+    for(let r=0;r<8;r++){
+      const row=sprite[(r+frame*2)%sprite.length]||'';
+      for(let c=0;c<8;c++){
+        if(row[c]==='X')oc2.fillRect(c*px,Math.round(r*px/1.5),px-1,Math.round(px/1.5));
+      }
+    }
+    return oc;
+  });
+});
+
 function alienType(row) {
   if (row <= 1) return 0;
   if (row <= 3) return 1;
@@ -157,6 +175,7 @@ function tryShoot() {
 
 function burst(x, y, color, n) {
   for (let i = 0; i < n; i++) {
+    if(particles.length>=80)break;
     const spd = rnd(1.5,5), a = rnd(0,Math.PI*2);
     particles.push({x,y,dx:Math.cos(a)*spd,dy:Math.sin(a)*spd,life:1.0,decay:rnd(0.02,0.05),r:rnd(2,5),color});
   }
@@ -166,28 +185,26 @@ function tickParticles(){
   particles=particles.filter(p=>p.life>0);
 }
 function drawParticles(){
-  particles.forEach(p=>{
-    const r=p.r*p.life;if(r<=0)return;
-    ctx.save();ctx.globalAlpha=p.life;ctx.shadowBlur=8;ctx.shadowColor=p.color;
-    ctx.fillStyle=p.color;ctx.beginPath();ctx.arc(p.x,p.y,r,0,Math.PI*2);ctx.fill();ctx.restore();
+  if(!particles.length)return;
+  const byColor={};
+  particles.forEach(p=>{if(!byColor[p.color])byColor[p.color]=[];byColor[p.color].push(p);});
+  Object.entries(byColor).forEach(([col,ps])=>{
+    ctx.save();ctx.shadowBlur=8;ctx.shadowColor=col;ctx.fillStyle=col;
+    ps.forEach(p=>{const r=p.r*p.life;if(r>0){ctx.globalAlpha=p.life;ctx.beginPath();ctx.arc(p.x,p.y,r,0,Math.PI*2);ctx.fill();}});
+    ctx.restore();
   });
 }
 
-function drawAlienSprite(a) {
-  if (!a.alive) return;
-  const sprite = ALIEN_SPRITES[a.type];
-  const color = ALIEN_COLORS[a.type];
-  const frame = Math.floor(frameCount / 20) % 2;
-  const px = 4;
-  ctx.save();
-  ctx.shadowBlur = 10; ctx.shadowColor = color; ctx.fillStyle = color;
-  for (let r = 0; r < 8; r++) {
-    const row = sprite[(r + frame * 2) % sprite.length] || '';
-    for (let c = 0; c < 8; c++) {
-      if (row[c] === 'X') ctx.fillRect(a.x + c*px, a.y + r*px/1.5, px-1, px/1.5);
-    }
-  }
-  ctx.restore();
+function drawAllAliens(){
+  const frame=Math.floor(frameCount/20)%2;
+  [0,1,2].forEach(type=>{
+    const col=ALIEN_COLORS[type];
+    ctx.save();ctx.shadowBlur=10;ctx.shadowColor=col;
+    aliens.filter(a=>a.alive&&a.type===type).forEach(a=>{
+      ctx.drawImage(ALIEN_IMGS[type][frame],a.x,a.y);
+    });
+    ctx.restore();
+  });
 }
 
 function drawPlayer() {
@@ -257,10 +274,10 @@ function drawHUD() {
   ctx.restore();
 }
 
+let _sl=null;
 function drawScanlines() {
-  ctx.save(); ctx.globalAlpha = 0.04; ctx.fillStyle = '#000';
-  for (let y = 0; y < LH; y += 3) ctx.fillRect(0, y, LW, 1);
-  ctx.restore();
+  if(!_sl){_sl=document.createElement('canvas');_sl.width=LW;_sl.height=LH;const sc=_sl.getContext('2d');sc.fillStyle='rgba(0,0,0,0.05)';for(let y=0;y<LH;y+=3)sc.fillRect(0,y,LW,1);}
+  ctx.drawImage(_sl,0,0);
 }
 
 function drawBackBtn() {
@@ -463,7 +480,7 @@ function drawPlay() {
   ctx.beginPath(); ctx.moveTo(0,LH-52); ctx.lineTo(LW,LH-52); ctx.stroke(); ctx.restore();
 
   drawShields();
-  aliens.forEach(a=>drawAlienSprite(a));
+  drawAllAliens();
   drawUFO();
   drawBullets();
   drawPlayer();
@@ -489,6 +506,7 @@ function drawEnd(won) {
 }
 
 function loop() {
+  frameCount++;
   ctx.clearRect(0,0,CW,CH);
   ctx.save(); ctx.scale(scaleX(),scaleY());
   if(gstate==='MENU') drawMenu();

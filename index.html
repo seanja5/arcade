@@ -73,15 +73,11 @@ canvas.addEventListener('click', e => {
 
 function getTVRect(i) {
   const col = i % 3, row = Math.floor(i / 3);
-  const tvW = 240, tvH = 200;
-  const padX = 60, padY = 110;
-  const gapX = (LW - padX * 2 - tvW * 3) / 2;
-  const gapY = 30;
-  return {
-    x: padX + col * (tvW + gapX),
-    y: padY + row * (tvH + gapY + 50),
-    w: tvW, h: tvH
-  };
+  const tvW = 220, tvH = 165;
+  const padX = 60, padY = 85;
+  const gapX = (LW - padX*2 - tvW*3) / 2;
+  const gapY = 18;
+  return { x: padX + col*(tvW+gapX), y: padY + row*(tvH+gapY+30), w: tvW, h: tvH };
 }
 
 // ─── TV Preview Simulations ───────────────────────────────────────────────────
@@ -495,26 +491,20 @@ function drawBackground() {
 function drawTitle() {
   const pulse = 0.7 + 0.3 * Math.sin(Date.now() / 500);
   ctx.save();
-  ctx.font = 'bold 64px Courier New';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.shadowBlur = 50 * pulse;
-  ctx.shadowColor = '#ffe600';
-  ctx.fillStyle = '#ffe600';
-  ctx.fillText('ARCADE', LW/2, 52);
-  // Subtitle
+  ctx.font = 'bold 56px Courier New';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.shadowBlur = 45 * pulse; ctx.shadowColor = '#ffe600'; ctx.fillStyle = '#ffe600';
+  ctx.fillText('ARCADE', LW/2, 46);
   ctx.font = 'bold 11px Courier New';
-  ctx.shadowBlur = 8;
-  ctx.shadowColor = CLR.dim;
-  ctx.fillStyle = CLR.dim;
-  ctx.fillText('RETROVOX ENTERTAINMENT SYSTEMS', LW/2, 84);
+  ctx.shadowBlur = 8; ctx.shadowColor = CLR.dim; ctx.fillStyle = CLR.dim;
+  ctx.fillText('RETROVOX ENTERTAINMENT SYSTEMS', LW/2, 74);
   ctx.restore();
 }
 
-function drawScanlines() {
-  ctx.save(); ctx.globalAlpha = 0.03; ctx.fillStyle = '#000';
-  for (let y = 0; y < LH; y += 3) ctx.fillRect(0, y, LW, 1);
-  ctx.restore();
+let _sl=null;
+function drawScanlines(){
+  if(!_sl){_sl=document.createElement('canvas');_sl.width=LW;_sl.height=LH;const sc=_sl.getContext('2d');sc.fillStyle='rgba(0,0,0,0.05)';for(let y=0;y<LH;y+=3)sc.fillRect(0,y,LW,1);}
+  ctx.drawImage(_sl,0,0);
 }
 
 function drawFooter() {
