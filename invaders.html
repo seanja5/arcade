@@ -118,7 +118,7 @@ function spawnAsteroid(x,y,size,spd){
   // Direction roughly toward center ±30 deg
   const cx=LW/2, cy=LH/2;
   const baseAngle=Math.atan2(cy-y,cx-x);
-  const angle=baseAngle+rnd(-Math.PI/6, Math.PI/6);
+  const angle=baseAngle;
   const numVerts=size==='large'?11:size==='medium'?9:7;
   asteroids.push({
     x, y,

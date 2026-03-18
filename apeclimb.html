@@ -281,9 +281,9 @@ function updatePlayer(){
 
     // No gravity while on ladder, no left/right movement
 
-    // Check if reached top floor
+    // Check if reached top floor (climbed up far enough)
     const topFloor = floors[player.climbFloorTo];
-    if(topFloor && player.y + PLAYER_H <= topFloor.y + 2){
+    if(topFloor && player.y + PLAYER_H <= topFloor.y + 4){
       const pcx = player.x + PLAYER_W/2;
       player.y = floorYAt(topFloor, pcx) - PLAYER_H;
       player.vy = 0;
@@ -295,7 +295,7 @@ function updatePlayer(){
 
     // Check if slid back down to bottom floor
     const botFloor = floors[player.climbFloorFrom];
-    if(botFloor && player.y + PLAYER_H >= botFloor.y - 2){
+    if(botFloor && player.y + PLAYER_H >= botFloor.y + 8){
       const pcx = player.x + PLAYER_W/2;
       player.y = floorYAt(botFloor, pcx) - PLAYER_H;
       player.vy = 0;
@@ -321,13 +321,14 @@ function updatePlayer(){
       const pcx = player.x + PLAYER_W/2;
       let foundLadder = false;
       for(const lad of ladders){
-        if(player.floorIdx === lad.f && lad.f+1 < floors.length && Math.abs(pcx - lad.x) < 28){
+        if(player.floorIdx === lad.f && lad.f+1 < floors.length && Math.abs(pcx - lad.x) < 32){
           player.onLadder = true;
           player.ladderX = lad.x;
           player.climbFloorFrom = lad.f;
           player.climbFloorTo = lad.f + 1;
           player.onGround = false;
           player.vy = 0;
+          player.y -= 10; // nudge up so bottom-exit check doesn't fire immediately
           foundLadder = true;
           break;
         }
@@ -339,13 +340,14 @@ function updatePlayer(){
       // Try to find a ladder to climb down
       const pcx = player.x + PLAYER_W/2;
       for(const lad of ladders){
-        if(player.floorIdx === lad.f + 1 && Math.abs(pcx - lad.x) < 28){
+        if(player.floorIdx === lad.f + 1 && Math.abs(pcx - lad.x) < 32){
           player.onLadder = true;
           player.ladderX = lad.x;
           player.climbFloorFrom = lad.f;
           player.climbFloorTo = lad.f + 1;
           player.onGround = false;
           player.vy = 0;
+          player.y += 10; // nudge down so top-exit check doesn't fire immediately
           break;
         }
       }
@@ -409,38 +411,36 @@ function updateBarrels(){
 
   barrels=barrels.filter(b=>{
     if(b.state==='ROLL'){
-      b.dir=getFloorDir(b.floor,floors);
       b.x+=b.dir*b.spd;
 
       const fl=floors[b.floor];
+      // Clamp x to floor and bounce at edges
+      if(b.x < fl.x1+10){ b.x=fl.x1+10; b.dir=1; }
+      if(b.x > fl.x2-10){ b.x=fl.x2-10; b.dir=-1; }
+
       const floorY=floorYAt(fl,b.x);
       b.y=floorY-8; // keep barrel on the floor surface
 
-      const atLeftEnd  = b.dir<0 && b.x<fl.x1+10;
-      const atRightEnd = b.dir>0 && b.x>fl.x2-10;
-
-      // Occasional random fall down a ladder
+      // Randomly fall down a ladder when passing over one
       let ladderFall=false;
-      if(!atLeftEnd&&!atRightEnd){
+      let ladderX=b.x;
+      if(b.floor>0){
         for(const lad of ladders){
-          if(lad.f===b.floor&&Math.abs(b.x-lad.x)<14&&Math.random()<0.025){
+          if(lad.f===b.floor-1&&Math.abs(b.x-lad.x)<16&&Math.random()<0.035){
             ladderFall=true;
+            ladderX=lad.x;
             break;
           }
         }
       }
 
-      if(atLeftEnd||atRightEnd||ladderFall){
-        if(b.floor>0){
-          b.state='FALL';
-          b.vy=1;
-          b.targetFloor=b.floor-1;
-          const nextFl=floors[b.targetFloor];
-          b.targetX=Math.max(nextFl.x1+20,Math.min(nextFl.x2-20,b.x));
-        } else {
-          // On bottom floor, barrel exits
-          return false;
-        }
+      if(ladderFall){
+        b.state='FALL';
+        b.vy=1;
+        b.targetFloor=b.floor-1;
+        const nextFl=floors[b.targetFloor];
+        // Barrel falls straight down the ladder
+        b.targetX=Math.max(nextFl.x1+20,Math.min(nextFl.x2-20,ladderX));
       }
     } else if(b.state==='FALL'){
       b.vy+=0.45;
@@ -455,7 +455,10 @@ function updateBarrels(){
           b.y=landY-8;
           b.vy=0;
           b.floor=b.targetFloor;
-          b.dir=getFloorDir(b.floor,floors);
+          // Keep rolling in same direction, switch if this direction would exit the floor
+          const tf=floors[b.targetFloor];
+          if(b.dir<0&&b.x<tf.x1+20)b.dir=1;
+          if(b.dir>0&&b.x>tf.x2-20)b.dir=-1;
           b.state='ROLL';
         }
       }
@@ -484,12 +487,16 @@ function updateBarrels(){
 function checkWin(){
   const floors=getFloors();
   const topFloor=floors[floors.length-1];
+  // Gorilla center position (matches drawGorilla)
+  const gx=topFloor.x2-50+14;
+  const gy=topFloor.y-28;
   const pcx=player.x+PLAYER_W/2;
-  if(player.floorIdx===floors.length-1&&pcx>=topFloor.x1+20&&pcx<=topFloor.x2-20){
+  const pcy=player.y+PLAYER_H/2;
+  if(Math.sqrt((pcx-gx)**2+(pcy-gy)**2)<52){
     score+=3000*level;
     level++;
     if(level>LEVEL_CONFIGS.length)level=LEVEL_CONFIGS.length;
-    burst(player.x+PLAYER_W/2,player.y,CLR.ui,30);
+    burst(pcx,player.y,CLR.ui,30);
     gstate='WIN';winTimer=120;
   }
 }
