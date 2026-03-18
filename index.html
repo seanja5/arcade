@@ -334,33 +334,48 @@ const tvCanvases = GAMES.map(()=>{
   return c;
 });
 
+// Pre-rendered TV overlay (scanlines + vignette) — built once, shared by all TVs
+const tvOverlay = (() => {
+  const tvW = 220, tvH = 165;
+  const oc = document.createElement('canvas');
+  oc.width = tvW; oc.height = tvH;
+  const oc2 = oc.getContext('2d');
+  // Scanlines
+  oc2.fillStyle = 'rgba(0,0,0,0.06)';
+  for (let y = 0; y < tvH; y += 3) oc2.fillRect(0, y, tvW, 1);
+  // Vignette
+  const vig = oc2.createRadialGradient(tvW/2, tvH/2, tvW*0.2, tvW/2, tvH/2, tvW*0.8);
+  vig.addColorStop(0, 'rgba(0,0,0,0)');
+  vig.addColorStop(1, 'rgba(0,0,0,0.55)');
+  oc2.fillStyle = vig;
+  oc2.fillRect(0, 0, tvW, tvH);
+  return oc;
+})();
+
+// Pre-rendered cursor — built once
+const _cursorCanvas = (() => {
+  const oc = document.createElement('canvas');
+  oc.width = 50; oc.height = 60;
+  const cc = oc.getContext('2d');
+  const p = 2, fg = CLR.cursor, dk = CLR.bg;
+  const OX = 18, OY = 26;
+  cc.shadowBlur = 10; cc.shadowColor = fg;
+  const dot = (c, r, col) => { cc.fillStyle = col||fg; cc.fillRect(OX+c*p, OY+r*p, p, p); };
+  dot(-2,-6);dot(-2,-5);dot(1,-6);dot(1,-5);
+  for(let c=-2;c<=2;c++)dot(c,-4);for(let c=-2;c<=2;c++)dot(c,-3);
+  dot(-2,-2);dot(-1,-2,dk);dot(0,-2);dot(1,-2,dk);dot(2,-2);
+  for(let c=-2;c<=2;c++)dot(c,-1);
+  dot(-1,0);dot(0,0);dot(1,0);dot(0,1);
+  for(let c=-1;c<=1;c++)dot(c,2);for(let c=-1;c<=1;c++)dot(c,3);for(let c=-1;c<=1;c++)dot(c,4);
+  dot(-2,5);dot(-1,5);dot(1,5);dot(2,5);dot(2,3);dot(3,4);dot(3,5);dot(2,6);dot(2,7);
+  return oc;
+})();
+
 let frameCount = 0;
 
 function drawCursor(cx, cy) {
-  const p = 2, fg = CLR.cursor, dk = CLR.bg;
   cctx.clearRect(0, 0, CW, CH);
-  cctx.save();
-  cctx.translate(Math.round(cx), Math.round(cy));
-  cctx.shadowBlur = 10; cctx.shadowColor = fg;
-  const dot = (c, r, col = fg) => {
-    cctx.fillStyle = col;
-    cctx.fillRect(c * p, r * p, p, p);
-  };
-  dot(-2,-6); dot(-2,-5);
-  dot( 1,-6); dot( 1,-5);
-  for (let c = -2; c <= 2; c++) dot(c, -4);
-  for (let c = -2; c <= 2; c++) dot(c, -3);
-  dot(-2,-2); dot(-1,-2,dk); dot(0,-2); dot(1,-2,dk); dot(2,-2);
-  for (let c = -2; c <= 2; c++) dot(c, -1);
-  dot(-1,0); dot(0,0); dot(1,0);
-  dot(0, 1);
-  for (let c = -1; c <= 1; c++) dot(c, 2);
-  for (let c = -1; c <= 1; c++) dot(c, 3);
-  for (let c = -1; c <= 1; c++) dot(c, 4);
-  dot(-2,5); dot(-1,5);
-  dot( 1,5); dot( 2,5);
-  dot(2,3); dot(3,4); dot(3,5); dot(2,6); dot(2,7);
-  cctx.restore();
+  cctx.drawImage(_cursorCanvas, Math.round(cx) - 18, Math.round(cy) - 26);
 }
 
 function drawTV(i) {
@@ -411,20 +426,8 @@ function drawTV(i) {
   // Draw preview
   ctx.drawImage(tc, -tv.w/2, -tv.h/2, tv.w, tv.h);
 
-  // Scanlines overlay
-  ctx.globalAlpha = 0.06;
-  ctx.fillStyle = '#000';
-  for (let y = -tv.h/2; y < tv.h/2; y += 3) {
-    ctx.fillRect(-tv.w/2, y, tv.w, 1);
-  }
-  ctx.globalAlpha = 1;
-
-  // CRT vignette
-  const vig = ctx.createRadialGradient(0, 0, tv.w*0.2, 0, 0, tv.w*0.8);
-  vig.addColorStop(0, 'rgba(0,0,0,0)');
-  vig.addColorStop(1, 'rgba(0,0,0,0.55)');
-  ctx.fillStyle = vig;
-  ctx.fillRect(-tv.w/2, -tv.h/2, tv.w, tv.h);
+  // Scanlines + vignette from pre-rendered overlay
+  ctx.drawImage(tvOverlay, -tv.w/2, -tv.h/2, tv.w, tv.h);
 
   // Screen border glow
   ctx.shadowBlur = 0;
@@ -480,15 +483,13 @@ function roundRect(c, x, y, w, h, r) {
 function drawBackground() {
   ctx.fillStyle = CLR.bg;
   ctx.fillRect(0, 0, LW, LH);
-  // Grid lines
+  // Grid lines — batched into two paths
   ctx.strokeStyle = 'rgba(0,245,255,0.04)';
   ctx.lineWidth = 1;
-  for (let x = 0; x < LW; x += 40) {
-    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, LH); ctx.stroke();
-  }
-  for (let y = 0; y < LH; y += 40) {
-    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(LW, y); ctx.stroke();
-  }
+  ctx.beginPath();
+  for (let x = 0; x < LW; x += 40) { ctx.moveTo(x, 0); ctx.lineTo(x, LH); }
+  for (let y = 0; y < LH; y += 40) { ctx.moveTo(0, y); ctx.lineTo(LW, y); }
+  ctx.stroke();
 }
 
 function drawTitle() {

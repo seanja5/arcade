@@ -81,6 +81,7 @@ let player={
 let barrels=[];
 let particles=[];
 let frameCount=0;
+let _cachedFloors=null, _cachedLadders=null, _cachedLevel=-1;
 let spawnTimer=0;
 let winTimer=0;
 
@@ -129,15 +130,18 @@ const rnd=(a,b)=>a+Math.random()*(b-a);
 const clamp=(v,lo,hi)=>Math.max(lo,Math.min(hi,v));
 
 function getLevelConfig(){return LEVEL_CONFIGS[Math.min(level-1,LEVEL_CONFIGS.length-1)];}
-function getFloors(){
+function _buildCache(){
+  if(_cachedLevel===level)return;
+  _cachedLevel=level;
   const cfg=getLevelConfig();
-  // Clone and add tiltY so original config objects stay clean
-  return cfg.floors.map((fl,fi,arr)=>{
+  _cachedFloors=cfg.floors.map((fl,fi,arr)=>{
     const dir=getFloorDir(fi,arr);
     return Object.assign({},fl,{tiltY: dir<0 ? 5 : -5});
   });
+  _cachedLadders=cfg.ladders;
 }
-function getLadders(){return getLevelConfig().ladders;}
+function getFloors(){_buildCache();return _cachedFloors;}
+function getLadders(){_buildCache();return _cachedLadders;}
 function getSpawnRate(){
   const mult=LEVEL_SPAWN_MULTS[Math.min(level-1,LEVEL_SPAWN_MULTS.length-1)];
   return Math.max(10,Math.floor(diff.spawnRate*mult));
@@ -166,6 +170,7 @@ function startGame(idx){
 }
 
 function initLevel(){
+  _cachedLevel=-1; // invalidate cache so new level config is picked up
   const floors=getFloors();
   barrels=[];particles=[];spawnTimer=0;
   malletItem={visible:false,x:0,y:0,despawnTimer:0};
@@ -414,17 +419,16 @@ function updateBarrels(){
       b.x+=b.dir*b.spd;
 
       const fl=floors[b.floor];
-      // Clamp x to floor and bounce at edges
-      if(b.x < fl.x1+10){ b.x=fl.x1+10; b.dir=1; }
-      if(b.x > fl.x2-10){ b.x=fl.x2-10; b.dir=-1; }
-
       const floorY=floorYAt(fl,b.x);
-      b.y=floorY-8; // keep barrel on the floor surface
+      b.y=floorY-8;
+
+      const atLeftEnd  = b.dir<0 && b.x<fl.x1+10;
+      const atRightEnd = b.dir>0 && b.x>fl.x2-10;
 
       // Randomly fall down a ladder when passing over one
       let ladderFall=false;
       let ladderX=b.x;
-      if(b.floor>0){
+      if(!atLeftEnd&&!atRightEnd&&b.floor>0){
         for(const lad of ladders){
           if(lad.f===b.floor-1&&Math.abs(b.x-lad.x)<16&&Math.random()<0.035){
             ladderFall=true;
@@ -434,19 +438,22 @@ function updateBarrels(){
         }
       }
 
-      if(ladderFall){
-        b.state='FALL';
-        b.vy=1;
-        b.targetFloor=b.floor-1;
-        const nextFl=floors[b.targetFloor];
-        // Barrel falls straight down the ladder
-        b.targetX=Math.max(nextFl.x1+20,Math.min(nextFl.x2-20,ladderX));
+      if(atLeftEnd||atRightEnd||ladderFall){
+        if(b.floor>0){
+          b.state='FALL';
+          b.vy=1;
+          b.targetFloor=b.floor-1;
+          const nextFl=floors[b.targetFloor];
+          // Snap targetX into the landing floor's range
+          b.targetX=Math.max(nextFl.x1+20,Math.min(nextFl.x2-20,ladderFall?ladderX:b.x));
+        } else {
+          return false; // exits off bottom floor
+        }
       }
     } else if(b.state==='FALL'){
       b.vy+=0.45;
       b.y+=b.vy;
-      // Ease x toward target landing x
-      b.x+=(b.targetX-b.x)*0.06;
+      b.x+=(b.targetX-b.x)*0.07;
 
       if(b.targetFloor>=0&&b.targetFloor<floors.length){
         const targetFl=floors[b.targetFloor];
@@ -455,10 +462,7 @@ function updateBarrels(){
           b.y=landY-8;
           b.vy=0;
           b.floor=b.targetFloor;
-          // Keep rolling in same direction, switch if this direction would exit the floor
-          const tf=floors[b.targetFloor];
-          if(b.dir<0&&b.x<tf.x1+20)b.dir=1;
-          if(b.dir>0&&b.x>tf.x2-20)b.dir=-1;
+          b.dir=getFloorDir(b.floor,floors); // switch direction on landing
           b.state='ROLL';
         }
       }
@@ -516,28 +520,39 @@ function drawFloors(){
   ctx.save();
   ctx.strokeStyle=CLR.orange;ctx.lineWidth=4;
   ctx.shadowBlur=8;ctx.shadowColor=CLR.orange+'88';
+  ctx.beginPath();
   floors.forEach((fl)=>{
-    const y1 = fl.y + (fl.tiltY||0);  // y at x1
-    const y2 = fl.y - (fl.tiltY||0);  // y at x2
-    ctx.beginPath();
+    const y1 = fl.y + (fl.tiltY||0);
+    const y2 = fl.y - (fl.tiltY||0);
     ctx.moveTo(fl.x1,y1);
     ctx.lineTo(fl.x2,y2);
-    ctx.stroke();
   });
+  ctx.stroke();
   ctx.restore();
 
   ctx.save();
+  ctx.strokeStyle='#885500';
+  // Rails — all in one path at lineWidth=3
+  ctx.lineWidth=3;
+  ctx.beginPath();
   ladders.forEach(lad=>{
     const f0=floors[lad.f],f1=floors[lad.f+1];
     if(!f1)return;
-    ctx.strokeStyle='#885500';ctx.lineWidth=3;
-    ctx.beginPath();ctx.moveTo(lad.x-6,f0.y);ctx.lineTo(lad.x-6,f1.y);ctx.stroke();
-    ctx.beginPath();ctx.moveTo(lad.x+6,f0.y);ctx.lineTo(lad.x+6,f1.y);ctx.stroke();
-    ctx.lineWidth=2;
+    ctx.moveTo(lad.x-6,f0.y);ctx.lineTo(lad.x-6,f1.y);
+    ctx.moveTo(lad.x+6,f0.y);ctx.lineTo(lad.x+6,f1.y);
+  });
+  ctx.stroke();
+  // Rungs — all in one path at lineWidth=2
+  ctx.lineWidth=2;
+  ctx.beginPath();
+  ladders.forEach(lad=>{
+    const f0=floors[lad.f],f1=floors[lad.f+1];
+    if(!f1)return;
     for(let ry=f1.y+8;ry<f0.y;ry+=14){
-      ctx.beginPath();ctx.moveTo(lad.x-6,ry);ctx.lineTo(lad.x+6,ry);ctx.stroke();
+      ctx.moveTo(lad.x-6,ry);ctx.lineTo(lad.x+6,ry);
     }
   });
+  ctx.stroke();
   ctx.restore();
 }
 
@@ -580,15 +595,22 @@ function drawPlayer(){
 }
 
 function drawBarrels(){
+  if(!barrels.length)return;
   ctx.save();
+  const by=(b)=>b.y+(b.state==='ROLL'?Math.sin(frameCount*0.35+b.x*0.04)*1.5:0);
+  // Barrel bodies — dark brown, with orange glow
+  ctx.shadowBlur=10;ctx.shadowColor=CLR.orange;ctx.fillStyle='#6d3810';
+  barrels.forEach(b=>{ctx.fillRect(b.x-7,by(b)-10,14,20);});
+  // Wood highlight strip (no glow)
+  ctx.shadowBlur=0;ctx.fillStyle='#8a4a18';
+  barrels.forEach(b=>{ctx.fillRect(b.x-4,by(b)-10,3,20);});
+  // Metal hoops
+  ctx.fillStyle='#c87820';
   barrels.forEach(b=>{
-    const bounce=b.state==='ROLL'?Math.sin(frameCount*0.35+b.x*0.04)*1.5:0;
-    const by=b.y-0+bounce; // b.y is already offset from floor surface
-    ctx.fillStyle=CLR.orange;ctx.shadowBlur=8;ctx.shadowColor=CLR.orange;
-    ctx.beginPath();ctx.arc(b.x,by,8,0,Math.PI*2);ctx.fill();
-    ctx.shadowBlur=0;ctx.strokeStyle='#884400';ctx.lineWidth=1.5;
-    ctx.beginPath();ctx.ellipse(b.x,by-3,8,3,0,0,Math.PI*2);ctx.stroke();
-    ctx.beginPath();ctx.ellipse(b.x,by+3,8,3,0,0,Math.PI*2);ctx.stroke();
+    const dy=by(b);
+    ctx.fillRect(b.x-8,dy-11,16,3); // top hoop
+    ctx.fillRect(b.x-8,dy-2, 16,3); // middle hoop
+    ctx.fillRect(b.x-8,dy+9, 16,3); // bottom hoop
   });
   ctx.restore();
 }
@@ -638,18 +660,22 @@ function drawBackBtn(){
   ctx.fillStyle=hov?CLR.orange:CLR.dim;ctx.shadowBlur=hov?12:0;ctx.shadowColor=CLR.orange;
   ctx.fillText('← ARCADE',BACK_BTN.x,BACK_BTN.y+BACK_BTN.h/2);ctx.restore();
 }
+let _cursorCanvas=null;
 function drawCursor(cx,cy){
-  const p=2,fg=CLR.cursor,dk=CLR.bg;ctx.save();
-  ctx.translate(Math.round(cx),Math.round(cy));ctx.shadowBlur=10;ctx.shadowColor=fg;
-  const dot=(c,r,col=fg)=>{ctx.fillStyle=col;ctx.fillRect(c*p,r*p,p,p);};
-  dot(-2,-6);dot(-2,-5);dot(1,-6);dot(1,-5);
-  for(let c=-2;c<=2;c++)dot(c,-4);for(let c=-2;c<=2;c++)dot(c,-3);
-  dot(-2,-2);dot(-1,-2,dk);dot(0,-2);dot(1,-2,dk);dot(2,-2);
-  for(let c=-2;c<=2;c++)dot(c,-1);
-  dot(-1,0);dot(0,0);dot(1,0);dot(0,1);
-  for(let c=-1;c<=1;c++)dot(c,2);for(let c=-1;c<=1;c++)dot(c,3);for(let c=-1;c<=1;c++)dot(c,4);
-  dot(-2,5);dot(-1,5);dot(1,5);dot(2,5);dot(2,3);dot(3,4);dot(3,5);dot(2,6);dot(2,7);
-  ctx.restore();
+  if(!_cursorCanvas){
+    _cursorCanvas=document.createElement('canvas');_cursorCanvas.width=50;_cursorCanvas.height=60;
+    const cc=_cursorCanvas.getContext('2d'),p=2,fg=CLR.cursor,dk=CLR.bg,OX=18,OY=26;
+    cc.shadowBlur=10;cc.shadowColor=fg;
+    const dot=(c,r,col)=>{cc.fillStyle=col||fg;cc.fillRect(OX+c*p,OY+r*p,p,p);};
+    dot(-2,-6);dot(-2,-5);dot(1,-6);dot(1,-5);
+    for(let c=-2;c<=2;c++)dot(c,-4);for(let c=-2;c<=2;c++)dot(c,-3);
+    dot(-2,-2);dot(-1,-2,dk);dot(0,-2);dot(1,-2,dk);dot(2,-2);
+    for(let c=-2;c<=2;c++)dot(c,-1);
+    dot(-1,0);dot(0,0);dot(1,0);dot(0,1);
+    for(let c=-1;c<=1;c++)dot(c,2);for(let c=-1;c<=1;c++)dot(c,3);for(let c=-1;c<=1;c++)dot(c,4);
+    dot(-2,5);dot(-1,5);dot(1,5);dot(2,5);dot(2,3);dot(3,4);dot(3,5);dot(2,6);dot(2,7);
+  }
+  ctx.drawImage(_cursorCanvas,Math.round(cx)-18,Math.round(cy)-26);
 }
 function label(text,x,y,size,color,align='center'){
   ctx.save();ctx.font=`bold ${size}px Courier New`;ctx.fillStyle=color;
@@ -725,7 +751,6 @@ function drawGameover(){
 }
 
 function loop(){
-  frameCount++;
   ctx.clearRect(0,0,CW,CH);
   ctx.save();ctx.scale(scaleX(),scaleY());
   if(gstate==='MENU')drawMenu();

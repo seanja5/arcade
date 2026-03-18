@@ -259,30 +259,22 @@ function drawBackBtn() {
   ctx.restore();
 }
 
+let _cursorCanvas = null;
 function drawCursor(cx, cy) {
-  const p = 2, fg = CLR.cursor, dk = CLR.bg;
-  ctx.save();
-  ctx.translate(Math.round(cx), Math.round(cy));
-  ctx.shadowBlur = 10; ctx.shadowColor = fg;
-  const dot = (c, r, col = fg) => {
-    ctx.fillStyle = col;
-    ctx.fillRect(c * p, r * p, p, p);
-  };
-  dot(-2,-6); dot(-2,-5);
-  dot( 1,-6); dot( 1,-5);
-  for (let c = -2; c <= 2; c++) dot(c, -4);
-  for (let c = -2; c <= 2; c++) dot(c, -3);
-  dot(-2,-2); dot(-1,-2,dk); dot(0,-2); dot(1,-2,dk); dot(2,-2);
-  for (let c = -2; c <= 2; c++) dot(c, -1);
-  dot(-1,0); dot(0,0); dot(1,0);
-  dot(0, 1);
-  for (let c = -1; c <= 1; c++) dot(c, 2);
-  for (let c = -1; c <= 1; c++) dot(c, 3);
-  for (let c = -1; c <= 1; c++) dot(c, 4);
-  dot(-2,5); dot(-1,5);
-  dot( 1,5); dot( 2,5);
-  dot(2,3); dot(3,4); dot(3,5); dot(2,6); dot(2,7);
-  ctx.restore();
+  if (!_cursorCanvas) {
+    _cursorCanvas = document.createElement('canvas'); _cursorCanvas.width = 50; _cursorCanvas.height = 60;
+    const cc = _cursorCanvas.getContext('2d'), p = 2, fg = CLR.cursor, dk = CLR.bg, OX = 18, OY = 26;
+    cc.shadowBlur = 10; cc.shadowColor = fg;
+    const dot = (c, r, col) => { cc.fillStyle = col||fg; cc.fillRect(OX+c*p, OY+r*p, p, p); };
+    dot(-2,-6); dot(-2,-5); dot(1,-6); dot(1,-5);
+    for (let c=-2;c<=2;c++) dot(c,-4); for (let c=-2;c<=2;c++) dot(c,-3);
+    dot(-2,-2); dot(-1,-2,dk); dot(0,-2); dot(1,-2,dk); dot(2,-2);
+    for (let c=-2;c<=2;c++) dot(c,-1);
+    dot(-1,0); dot(0,0); dot(1,0); dot(0,1);
+    for (let c=-1;c<=1;c++) dot(c,2); for (let c=-1;c<=1;c++) dot(c,3); for (let c=-1;c<=1;c++) dot(c,4);
+    dot(-2,5); dot(-1,5); dot(1,5); dot(2,5); dot(2,3); dot(3,4); dot(3,5); dot(2,6); dot(2,7);
+  }
+  ctx.drawImage(_cursorCanvas, Math.round(cx)-18, Math.round(cy)-26);
 }
 
 function drawMenu() {
@@ -347,17 +339,19 @@ function drawWin() {
   drawScanlines();
 }
 
+let _courtGradient = null;
 function drawGame() {
   ctx.save();
   ctx.translate(shakeX, shakeY);
   ctx.fillStyle = CLR.bg; ctx.fillRect(-12, -12, LW+24, LH+24);
-  ctx.save();
-  const gp = ctx.createLinearGradient(0, 0, LW, 0);
-  gp.addColorStop(0,   'rgba(0,245,255,0.04)');
-  gp.addColorStop(0.45,'transparent');
-  gp.addColorStop(0.55,'transparent');
-  gp.addColorStop(1,   'rgba(255,45,120,0.04)');
-  ctx.fillStyle = gp; ctx.fillRect(0, 0, LW, LH);
+  if (!_courtGradient) {
+    _courtGradient = ctx.createLinearGradient(0, 0, LW, 0);
+    _courtGradient.addColorStop(0,   'rgba(0,245,255,0.04)');
+    _courtGradient.addColorStop(0.45,'transparent');
+    _courtGradient.addColorStop(0.55,'transparent');
+    _courtGradient.addColorStop(1,   'rgba(255,45,120,0.04)');
+  }
+  ctx.fillStyle = _courtGradient; ctx.fillRect(0, 0, LW, LH);
   ctx.restore();
   drawNet();
   ctx.save();

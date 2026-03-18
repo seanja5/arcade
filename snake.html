@@ -206,18 +206,22 @@ function drawBackBtn(){
   ctx.fillStyle=hov?CLR.ui:CLR.dim; ctx.shadowBlur=hov?12:0; ctx.shadowColor=CLR.ui;
   ctx.fillText('← ARCADE',BACK_BTN.x,BACK_BTN.y+BACK_BTN.h/2); ctx.restore();
 }
+let _cursorCanvas=null;
 function drawCursor(cx,cy){
-  const p=2,fg=CLR.cursor,dk=CLR.bg; ctx.save();
-  ctx.translate(Math.round(cx),Math.round(cy)); ctx.shadowBlur=10; ctx.shadowColor=fg;
-  const dot=(c,r,col=fg)=>{ctx.fillStyle=col;ctx.fillRect(c*p,r*p,p,p);};
-  dot(-2,-6);dot(-2,-5);dot(1,-6);dot(1,-5);
-  for(let c=-2;c<=2;c++)dot(c,-4);for(let c=-2;c<=2;c++)dot(c,-3);
-  dot(-2,-2);dot(-1,-2,dk);dot(0,-2);dot(1,-2,dk);dot(2,-2);
-  for(let c=-2;c<=2;c++)dot(c,-1);
-  dot(-1,0);dot(0,0);dot(1,0);dot(0,1);
-  for(let c=-1;c<=1;c++)dot(c,2);for(let c=-1;c<=1;c++)dot(c,3);for(let c=-1;c<=1;c++)dot(c,4);
-  dot(-2,5);dot(-1,5);dot(1,5);dot(2,5);dot(2,3);dot(3,4);dot(3,5);dot(2,6);dot(2,7);
-  ctx.restore();
+  if(!_cursorCanvas){
+    _cursorCanvas=document.createElement('canvas');_cursorCanvas.width=50;_cursorCanvas.height=60;
+    const cc=_cursorCanvas.getContext('2d'),p=2,fg=CLR.cursor,dk=CLR.bg,OX=18,OY=26;
+    cc.shadowBlur=10;cc.shadowColor=fg;
+    const dot=(c,r,col)=>{cc.fillStyle=col||fg;cc.fillRect(OX+c*p,OY+r*p,p,p);};
+    dot(-2,-6);dot(-2,-5);dot(1,-6);dot(1,-5);
+    for(let c=-2;c<=2;c++)dot(c,-4);for(let c=-2;c<=2;c++)dot(c,-3);
+    dot(-2,-2);dot(-1,-2,dk);dot(0,-2);dot(1,-2,dk);dot(2,-2);
+    for(let c=-2;c<=2;c++)dot(c,-1);
+    dot(-1,0);dot(0,0);dot(1,0);dot(0,1);
+    for(let c=-1;c<=1;c++)dot(c,2);for(let c=-1;c<=1;c++)dot(c,3);for(let c=-1;c<=1;c++)dot(c,4);
+    dot(-2,5);dot(-1,5);dot(1,5);dot(2,5);dot(2,3);dot(3,4);dot(3,5);dot(2,6);dot(2,7);
+  }
+  ctx.drawImage(_cursorCanvas,Math.round(cx)-18,Math.round(cy)-26);
 }
 function label(text,x,y,size,color,align='center'){
   ctx.save(); ctx.font=`bold ${size}px Courier New`; ctx.fillStyle=color;

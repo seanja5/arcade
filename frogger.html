@@ -327,21 +327,18 @@ function drawRow(r,row,sy){
     ctx.beginPath();ctx.moveTo(0,sy+CELL/2);ctx.lineTo(LW,sy+CELL/2);ctx.stroke();
     ctx.setLineDash([]);
     ctx.restore();
-    // Draw cars
+    // Draw cars — bodies first (with glow), then windows + wheels (no glow)
     const carColor=row.dir>0?'#ff8800':'#ff2d78';
     ctx.save();
     ctx.fillStyle=carColor;ctx.shadowBlur=8;ctx.shadowColor=carColor;
+    row.objs.forEach(obj=>{ctx.fillRect(obj.x,sy+6,obj.w,CELL-12);});
+    ctx.shadowBlur=0;
+    ctx.fillStyle='rgba(255,255,255,0.2)';
+    row.objs.forEach(obj=>{ctx.fillRect(obj.x+4,sy+8,obj.w-8,10);});
+    ctx.fillStyle='#333';
     row.objs.forEach(obj=>{
-      ctx.fillRect(obj.x,sy+6,obj.w,CELL-12);
-      // Windshield
-      ctx.fillStyle='rgba(255,255,255,0.2)';
-      ctx.fillRect(obj.x+4,sy+8,obj.w-8,10);
-      ctx.fillStyle=carColor;
-      // Wheels
-      ctx.shadowBlur=0;ctx.fillStyle='#333';
       ctx.beginPath();ctx.arc(obj.x+8,sy+CELL-8,5,0,Math.PI*2);ctx.fill();
       ctx.beginPath();ctx.arc(obj.x+obj.w-8,sy+CELL-8,5,0,Math.PI*2);ctx.fill();
-      ctx.fillStyle=carColor;ctx.shadowBlur=8;ctx.shadowColor=carColor;
     });
     ctx.restore();
   } else if(row.type==='RIVER'){
@@ -355,16 +352,14 @@ function drawRow(r,row,sy){
       ctx.fillRect(wx,sy+CELL*0.3,40,4);
     }
     ctx.restore();
-    // Draw logs
+    // Draw logs — bodies with glow, grain without
     ctx.save();
     ctx.fillStyle='#663300';ctx.shadowBlur=6;ctx.shadowColor='#884400';
+    row.objs.forEach(obj=>{ctx.beginPath();ctx.roundRect(obj.x,sy+8,obj.w,CELL-16,6);ctx.fill();});
+    ctx.shadowBlur=0;ctx.fillStyle='#774400';
     row.objs.forEach(obj=>{
-      ctx.beginPath();ctx.roundRect(obj.x,sy+8,obj.w,CELL-16,6);ctx.fill();
-      // Wood grain
-      ctx.fillStyle='#774400';
       ctx.fillRect(obj.x+4,sy+12,obj.w-8,3);
       ctx.fillRect(obj.x+4,sy+CELL-18,obj.w-8,3);
-      ctx.fillStyle='#663300';ctx.shadowBlur=6;ctx.shadowColor='#884400';
     });
     ctx.restore();
   } else if(row.type==='TRAIN'){
@@ -473,18 +468,22 @@ function drawBackBtn(){
   ctx.fillStyle=hov?CLR.purple:CLR.dim;ctx.shadowBlur=hov?12:0;ctx.shadowColor=CLR.purple;
   ctx.fillText('← ARCADE',BACK_BTN.x,BACK_BTN.y+BACK_BTN.h/2);ctx.restore();
 }
+let _cursorCanvas=null;
 function drawCursor(cx,cy){
-  const p=2,fg=CLR.cursor,dk=CLR.bg;ctx.save();
-  ctx.translate(Math.round(cx),Math.round(cy));ctx.shadowBlur=10;ctx.shadowColor=fg;
-  const dot=(c,r,col=fg)=>{ctx.fillStyle=col;ctx.fillRect(c*p,r*p,p,p);};
-  dot(-2,-6);dot(-2,-5);dot(1,-6);dot(1,-5);
-  for(let c=-2;c<=2;c++)dot(c,-4);for(let c=-2;c<=2;c++)dot(c,-3);
-  dot(-2,-2);dot(-1,-2,dk);dot(0,-2);dot(1,-2,dk);dot(2,-2);
-  for(let c=-2;c<=2;c++)dot(c,-1);
-  dot(-1,0);dot(0,0);dot(1,0);dot(0,1);
-  for(let c=-1;c<=1;c++)dot(c,2);for(let c=-1;c<=1;c++)dot(c,3);for(let c=-1;c<=1;c++)dot(c,4);
-  dot(-2,5);dot(-1,5);dot(1,5);dot(2,5);dot(2,3);dot(3,4);dot(3,5);dot(2,6);dot(2,7);
-  ctx.restore();
+  if(!_cursorCanvas){
+    _cursorCanvas=document.createElement('canvas');_cursorCanvas.width=50;_cursorCanvas.height=60;
+    const cc=_cursorCanvas.getContext('2d'),p=2,fg=CLR.cursor,dk=CLR.bg,OX=18,OY=26;
+    cc.shadowBlur=10;cc.shadowColor=fg;
+    const dot=(c,r,col)=>{cc.fillStyle=col||fg;cc.fillRect(OX+c*p,OY+r*p,p,p);};
+    dot(-2,-6);dot(-2,-5);dot(1,-6);dot(1,-5);
+    for(let c=-2;c<=2;c++)dot(c,-4);for(let c=-2;c<=2;c++)dot(c,-3);
+    dot(-2,-2);dot(-1,-2,dk);dot(0,-2);dot(1,-2,dk);dot(2,-2);
+    for(let c=-2;c<=2;c++)dot(c,-1);
+    dot(-1,0);dot(0,0);dot(1,0);dot(0,1);
+    for(let c=-1;c<=1;c++)dot(c,2);for(let c=-1;c<=1;c++)dot(c,3);for(let c=-1;c<=1;c++)dot(c,4);
+    dot(-2,5);dot(-1,5);dot(1,5);dot(2,5);dot(2,3);dot(3,4);dot(3,5);dot(2,6);dot(2,7);
+  }
+  ctx.drawImage(_cursorCanvas,Math.round(cx)-18,Math.round(cy)-26);
 }
 function label(text,x,y,size,color,align='center'){
   ctx.save();ctx.font=`bold ${size}px Courier New`;ctx.fillStyle=color;
@@ -543,7 +542,6 @@ function drawGameover(){
 }
 
 function loop(){
-  frameCount++;
   ctx.clearRect(0,0,CW,CH);
   ctx.save();ctx.scale(scaleX(),scaleY());
   if(gstate==='MENU')drawMenu();
