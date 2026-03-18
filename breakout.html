@@ -45,6 +45,7 @@ let diff=null;
 let score=0, lives=3, level=1;
 let bricks=[], ball={}, paddle={}, particles=[];
 let frameCount=0;
+let brickCache=null, brickDirty=true;
 let rawMX=CW/2,rawMY=CH/2,logMX=LW/2,logMY=LH/2;
 const keys={};
 const BACK_BTN={x:10,y:LH-32,w:110,h:22};
@@ -102,6 +103,7 @@ function setupLevel(){
       });
     }
   }
+  brickDirty=true;
   resetBall();
   particles=[];
 }
@@ -122,9 +124,9 @@ function launchBall(){
 
 function burst(x,y,color,n){
   for(let i=0;i<n;i++){
-    if(particles.length>=80)break;
-    const spd=rnd(1.5,5),a=rnd(0,Math.PI*2);
-    particles.push({x,y,dx:Math.cos(a)*spd,dy:Math.sin(a)*spd,life:1.0,decay:rnd(0.02,0.05),r:rnd(2,5),color});
+    if(particles.length>=50)break;
+    const spd=rnd(1.5,4.5),a=rnd(0,Math.PI*2);
+    particles.push({x,y,dx:Math.cos(a)*spd,dy:Math.sin(a)*spd,life:1.0,decay:rnd(0.03,0.07),r:rnd(1.5,4),color});
   }
 }
 function tickParticles(){
@@ -136,43 +138,55 @@ function drawParticles(){
   const byColor={};
   particles.forEach(p=>{if(!byColor[p.color])byColor[p.color]=[];byColor[p.color].push(p);});
   Object.entries(byColor).forEach(([col,ps])=>{
-    ctx.save();ctx.shadowBlur=8;ctx.shadowColor=col;ctx.fillStyle=col;
-    ps.forEach(p=>{const r=p.r*p.life;if(r>0){ctx.globalAlpha=p.life;ctx.beginPath();ctx.arc(p.x,p.y,r,0,Math.PI*2);ctx.fill();}});
+    ctx.save();ctx.shadowBlur=0;ctx.fillStyle=col;
+    ps.forEach(p=>{const r=p.r*p.life;if(r>0.5){ctx.globalAlpha=p.life*0.85;ctx.beginPath();ctx.arc(p.x,p.y,r,0,Math.PI*2);ctx.fill();}});
     ctx.restore();
   });
 }
 
-function drawBricks(){
-  // Batch by row color
+function renderBrickCache(){
+  if(!brickCache){brickCache=document.createElement('canvas');brickCache.width=LW;brickCache.height=LH;}
+  const bc=brickCache.getContext('2d');
+  bc.clearRect(0,0,LW,LH);
   for(let rowIdx=0;rowIdx<BRICK_ROWS;rowIdx++){
     const col=ROW_COLORS[rowIdx];
-    ctx.save();ctx.shadowBlur=6;ctx.shadowColor=col;ctx.fillStyle=col;
+    bc.shadowBlur=5; bc.shadowColor=col; bc.fillStyle=col;
     bricks.filter(b=>b.alive&&b.row===rowIdx).forEach(b=>{
-      ctx.globalAlpha=b.hp>1?0.6:0.9;
-      ctx.beginPath();ctx.roundRect(b.x,b.y,BRICK_W,BRICK_H,4);ctx.fill();
-      ctx.globalAlpha=1;ctx.fillStyle='rgba(255,255,255,0.12)';
-      ctx.fillRect(b.x+3,b.y+2,BRICK_W-6,4);
-      ctx.fillStyle=col;
+      bc.globalAlpha=b.hp>1?0.55:0.9;
+      bc.beginPath();
+      const r2=4,x=b.x,y=b.y,w=BRICK_W,h=BRICK_H;
+      bc.moveTo(x+r2,y);bc.arcTo(x+w,y,x+w,y+h,r2);bc.arcTo(x+w,y+h,x,y+h,r2);bc.arcTo(x,y+h,x,y,r2);bc.arcTo(x,y,x+w,y,r2);bc.closePath();
+      bc.fill();
+      bc.globalAlpha=1; bc.shadowBlur=0;
+      bc.fillStyle='rgba(255,255,255,0.1)';
+      bc.fillRect(b.x+3,b.y+2,BRICK_W-6,3);
+      bc.fillStyle=col; bc.shadowBlur=5;
     });
-    ctx.restore();
+    bc.shadowBlur=0;
   }
+}
+function drawBricks(){
+  if(brickDirty){renderBrickCache();brickDirty=false;}
+  ctx.drawImage(brickCache,0,0);
 }
 
 function drawPaddle(){
   ctx.save();
-  ctx.shadowBlur=20; ctx.shadowColor=CLR.enemy; ctx.fillStyle=CLR.enemy;
+  ctx.shadowBlur=12; ctx.shadowColor=CLR.enemy; ctx.fillStyle=CLR.enemy;
   ctx.beginPath(); ctx.roundRect(paddle.x,PADDLE_Y,PADDLE_W,PADDLE_H,6); ctx.fill();
-  ctx.fillStyle='rgba(255,255,255,0.2)';
+  ctx.shadowBlur=0;
+  ctx.fillStyle='rgba(255,255,255,0.18)';
   ctx.fillRect(paddle.x+4,PADDLE_Y+2,PADDLE_W-8,4);
   ctx.restore();
 }
 
 function drawBall(){
   ctx.save();
-  ctx.shadowBlur=24; ctx.shadowColor='#fff'; ctx.fillStyle='#fff';
+  ctx.shadowBlur=14; ctx.shadowColor='#aaddff'; ctx.fillStyle='#ffffff';
   ctx.beginPath(); ctx.arc(ball.x,ball.y,BALL_R,0,Math.PI*2); ctx.fill();
+  ctx.shadowBlur=0;
   ctx.fillStyle='#ddf0ff';
-  ctx.beginPath(); ctx.arc(ball.x-2,ball.y-2,BALL_R*0.4,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(ball.x-2,ball.y-2,BALL_R*0.38,0,Math.PI*2); ctx.fill();
   ctx.restore();
 }
 
@@ -260,10 +274,11 @@ function updateGame(){
     const bx2=b.x+BRICK_W, by2=b.y+BRICK_H;
     if(ball.x+BALL_R>b.x&&ball.x-BALL_R<bx2&&ball.y+BALL_R>b.y&&ball.y-BALL_R<by2){
       b.hp--;
+      brickDirty=true;
       if(b.hp<=0){
         b.alive=false;
         score+=ROW_POINTS[b.row]*(level);
-        burst(b.x+BRICK_W/2,b.y+BRICK_H/2,ROW_COLORS[b.row],10);
+        burst(b.x+BRICK_W/2,b.y+BRICK_H/2,ROW_COLORS[b.row],8);
         // Speed up slightly
         ball.spd=Math.min(ball.spd+0.08,diff.ballSpd*1.8);
       }

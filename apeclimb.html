@@ -71,7 +71,13 @@ const PLAYER_W=16, PLAYER_H=24;
 let gstate='MENU';
 let diff=null;
 let score=0, lives=3, level=1;
-let player={x:0,y:0,vx:0,vy:0,onGround:false,floorIdx:0,facingRight:true,invincible:0};
+let player={
+  x:0,y:0,vx:0,vy:0,
+  onGround:false,floorIdx:0,
+  facingRight:true,invincible:0,
+  onLadder:false,ladderX:0,
+  climbFloorFrom:0,climbFloorTo:0
+};
 let barrels=[];
 let particles=[];
 let frameCount=0;
@@ -103,12 +109,7 @@ document.addEventListener('keydown',e=>{
   if(gstate==='PLAY'&&e.code==='Escape')gstate='MENU';
   if(gstate==='WIN'&&(e.code==='Enter'||e.code==='Space')){initLevel();gstate='PLAY';}
   if(gstate==='PLAY'){
-    if((e.code==='ArrowUp'||e.code==='KeyW')){
-      if(player.onGround)doJump();
-      else tryLadder(-1);
-    }
-    if((e.code==='ArrowDown'||e.code==='KeyS'))tryLadder(1);
-    if(e.code==='Space'&&player.onGround)doJump();
+    if(e.code==='Space'&&!player.onLadder&&player.onGround)doJump();
   }
 });
 document.addEventListener('keyup',e=>{delete keys[e.code];});
@@ -128,7 +129,14 @@ const rnd=(a,b)=>a+Math.random()*(b-a);
 const clamp=(v,lo,hi)=>Math.max(lo,Math.min(hi,v));
 
 function getLevelConfig(){return LEVEL_CONFIGS[Math.min(level-1,LEVEL_CONFIGS.length-1)];}
-function getFloors(){return getLevelConfig().floors;}
+function getFloors(){
+  const cfg=getLevelConfig();
+  // Clone and add tiltY so original config objects stay clean
+  return cfg.floors.map((fl,fi,arr)=>{
+    const dir=getFloorDir(fi,arr);
+    return Object.assign({},fl,{tiltY: dir<0 ? 5 : -5});
+  });
+}
 function getLadders(){return getLevelConfig().ladders;}
 function getSpawnRate(){
   const mult=LEVEL_SPAWN_MULTS[Math.min(level-1,LEVEL_SPAWN_MULTS.length-1)];
@@ -139,6 +147,17 @@ function getBarrelSpd(){
   return diff.barrelSpd*mult;
 }
 function getMaxBarrels(){return Math.min(diff.maxBarrels+level-1,12);}
+
+// Returns direction barrels roll on floor fi: top floor = -1 (left), alternates
+function getFloorDir(fi, floors){
+  return (floors.length - 1 - fi) % 2 === 0 ? -1 : 1;
+}
+
+// Y position of floor surface at a given x, accounting for tilt
+function floorYAt(fl, x){
+  const t = (fl.x2 === fl.x1) ? 0 : (x - fl.x1) / (fl.x2 - fl.x1);
+  return fl.y + (fl.tiltY || 0) * (1 - 2 * t);
+}
 
 function startGame(idx){
   diff=DIFFS[idx]; score=0; lives=3; level=1;
@@ -157,35 +176,13 @@ function initLevel(){
   player.y=bf.y-PLAYER_H;
   player.vx=0;player.vy=0;player.onGround=true;player.floorIdx=0;
   player.facingRight=true;player.invincible=0;
+  player.onLadder=false;player.ladderX=0;
+  player.climbFloorFrom=0;player.climbFloorTo=0;
 }
 
 function doJump(){
   player.vy=JUMP_VEL;
   player.onGround=false;
-}
-
-function tryLadder(dir){
-  const ladders=getLadders();
-  const floors=getFloors();
-  const pcx=player.x+PLAYER_W/2;
-  for(const lad of ladders){
-    if(Math.abs(pcx-lad.x)<20){
-      if(dir===-1&&player.floorIdx===lad.f&&lad.f+1<floors.length){
-        const tf=floors[lad.f+1];
-        player.x=lad.x-PLAYER_W/2;
-        player.y=tf.y-PLAYER_H;
-        player.vy=0;player.vx=0;player.onGround=true;player.floorIdx=lad.f+1;
-        return;
-      }
-      if(dir===1&&player.floorIdx===lad.f+1){
-        const tf=floors[lad.f];
-        player.x=lad.x-PLAYER_W/2;
-        player.y=tf.y-PLAYER_H;
-        player.vy=0;player.vx=0;player.onGround=true;player.floorIdx=lad.f;
-        return;
-      }
-    }
-  }
 }
 
 function burst(x,y,color,n){
@@ -221,6 +218,7 @@ function loseLife(){
   player.x=(bf.x1+bf.x2)/2-PLAYER_W/2;
   player.y=bf.y-PLAYER_H;
   player.vx=0;player.vy=0;player.onGround=true;player.floorIdx=0;
+  player.onLadder=false;
   barrels=[];spawnTimer=0;
 }
 
@@ -267,10 +265,92 @@ function updateMallet(){
 
 function updatePlayer(){
   const floors=getFloors();
+  const ladders=getLadders();
   if(player.invincible>0)player.invincible--;
 
+  if(player.onLadder){
+    // Snap x to ladder
+    player.x = player.ladderX - PLAYER_W/2;
+
+    // Vertical climbing movement
+    const upHeld   = keys['ArrowUp']   || keys['KeyW'];
+    const downHeld = keys['ArrowDown'] || keys['KeyS'];
+
+    if(upHeld)   player.y -= 2.5;
+    if(downHeld) player.y += 2.5;
+
+    // No gravity while on ladder, no left/right movement
+
+    // Check if reached top floor
+    const topFloor = floors[player.climbFloorTo];
+    if(topFloor && player.y + PLAYER_H <= topFloor.y + 2){
+      const pcx = player.x + PLAYER_W/2;
+      player.y = floorYAt(topFloor, pcx) - PLAYER_H;
+      player.vy = 0;
+      player.onGround = true;
+      player.floorIdx = player.climbFloorTo;
+      player.onLadder = false;
+      return;
+    }
+
+    // Check if slid back down to bottom floor
+    const botFloor = floors[player.climbFloorFrom];
+    if(botFloor && player.y + PLAYER_H >= botFloor.y - 2){
+      const pcx = player.x + PLAYER_W/2;
+      player.y = floorYAt(botFloor, pcx) - PLAYER_H;
+      player.vy = 0;
+      player.onGround = true;
+      player.floorIdx = player.climbFloorFrom;
+      player.onLadder = false;
+    }
+
+    return; // Skip normal physics while on ladder
+  }
+
+  // Normal (not on ladder) movement
   if(keys['ArrowLeft']||keys['KeyA']){player.x-=3;player.facingRight=false;}
   if(keys['ArrowRight']||keys['KeyD']){player.x+=3;player.facingRight=true;}
+
+  // Handle up/down for ladder entry or jump
+  const upHeld   = keys['ArrowUp']   || keys['KeyW'];
+  const downHeld = keys['ArrowDown'] || keys['KeyS'];
+
+  if(player.onGround){
+    if(upHeld){
+      // Try to find a ladder to climb up
+      const pcx = player.x + PLAYER_W/2;
+      let foundLadder = false;
+      for(const lad of ladders){
+        if(player.floorIdx === lad.f && lad.f+1 < floors.length && Math.abs(pcx - lad.x) < 28){
+          player.onLadder = true;
+          player.ladderX = lad.x;
+          player.climbFloorFrom = lad.f;
+          player.climbFloorTo = lad.f + 1;
+          player.onGround = false;
+          player.vy = 0;
+          foundLadder = true;
+          break;
+        }
+      }
+      if(!foundLadder){
+        doJump();
+      }
+    } else if(downHeld){
+      // Try to find a ladder to climb down
+      const pcx = player.x + PLAYER_W/2;
+      for(const lad of ladders){
+        if(player.floorIdx === lad.f + 1 && Math.abs(pcx - lad.x) < 28){
+          player.onLadder = true;
+          player.ladderX = lad.x;
+          player.climbFloorFrom = lad.f;
+          player.climbFloorTo = lad.f + 1;
+          player.onGround = false;
+          player.vy = 0;
+          break;
+        }
+      }
+    }
+  }
 
   if(!player.onGround){
     player.vy+=GRAVITY;
@@ -283,8 +363,9 @@ function updatePlayer(){
     const pcx=player.x+PLAYER_W/2;
     if(pcx>=fl.x1&&pcx<=fl.x2){
       const pby=player.y+PLAYER_H;
-      if(pby>=fl.y-2&&pby<=fl.y+12&&player.vy>=0){
-        player.y=fl.y-PLAYER_H;
+      const floorSurfaceY=floorYAt(fl,pcx);
+      if(pby>=floorSurfaceY-2&&pby<=floorSurfaceY+12&&player.vy>=0){
+        player.y=floorSurfaceY-PLAYER_H;
         player.vy=0;
         player.onGround=true;
         player.floorIdx=fi;
@@ -314,49 +395,68 @@ function updateBarrels(){
     const topFloor=floors[floors.length-1];
     barrels.push({
       x:topFloor.x2-25,
-      y:topFloor.y-10,
+      y:floorYAt(topFloor,topFloor.x2-25)-8,
       dir:-1,
       spd:spd,
       floor:floors.length-1,
       vy:0,
       state:'ROLL',
+      targetFloor:-1,
+      targetX:0,
       scored:false
     });
   }
 
   barrels=barrels.filter(b=>{
     if(b.state==='ROLL'){
+      b.dir=getFloorDir(b.floor,floors);
       b.x+=b.dir*b.spd;
+
       const fl=floors[b.floor];
-      let fell=false;
+      const floorY=floorYAt(fl,b.x);
+      b.y=floorY-8; // keep barrel on the floor surface
 
-      if(Math.random()<0.0025)fell=true;
-      if(!fell&&b.dir<0&&b.x<fl.x1)fell=true;
-      if(!fell&&b.dir>0&&b.x>fl.x2)fell=true;
+      const atLeftEnd  = b.dir<0 && b.x<fl.x1+10;
+      const atRightEnd = b.dir>0 && b.x>fl.x2-10;
 
-      if(!fell){
+      // Occasional random fall down a ladder
+      let ladderFall=false;
+      if(!atLeftEnd&&!atRightEnd){
         for(const lad of ladders){
-          if(lad.f===b.floor&&Math.abs(b.x-lad.x)<12&&Math.random()<0.35){
-            fell=true;break;
+          if(lad.f===b.floor&&Math.abs(b.x-lad.x)<14&&Math.random()<0.025){
+            ladderFall=true;
+            break;
           }
         }
       }
 
-      if(fell){b.state='FALL';b.vy=1;}
+      if(atLeftEnd||atRightEnd||ladderFall){
+        if(b.floor>0){
+          b.state='FALL';
+          b.vy=1;
+          b.targetFloor=b.floor-1;
+          const nextFl=floors[b.targetFloor];
+          b.targetX=Math.max(nextFl.x1+20,Math.min(nextFl.x2-20,b.x));
+        } else {
+          // On bottom floor, barrel exits
+          return false;
+        }
+      }
     } else if(b.state==='FALL'){
-      b.vy+=0.5;
+      b.vy+=0.45;
       b.y+=b.vy;
-      b.x+=b.dir*b.spd*0.25;
+      // Ease x toward target landing x
+      b.x+=(b.targetX-b.x)*0.06;
 
-      for(let fi=0;fi<floors.length;fi++){
-        if(fi===b.floor)continue;
-        const fl=floors[fi];
-        if(b.x>=fl.x1&&b.x<=fl.x2&&b.y>=fl.y-2&&b.y<=fl.y+14&&b.vy>0){
-          b.y=fl.y-8;
+      if(b.targetFloor>=0&&b.targetFloor<floors.length){
+        const targetFl=floors[b.targetFloor];
+        const landY=floorYAt(targetFl,b.x);
+        if(b.y>=landY-8&&b.vy>0){
+          b.y=landY-8;
           b.vy=0;
+          b.floor=b.targetFloor;
+          b.dir=getFloorDir(b.floor,floors);
           b.state='ROLL';
-          b.floor=fi;
-          break;
         }
       }
 
@@ -409,8 +509,13 @@ function drawFloors(){
   ctx.save();
   ctx.strokeStyle=CLR.orange;ctx.lineWidth=4;
   ctx.shadowBlur=8;ctx.shadowColor=CLR.orange+'88';
-  floors.forEach(fl=>{
-    ctx.beginPath();ctx.moveTo(fl.x1,fl.y);ctx.lineTo(fl.x2,fl.y);ctx.stroke();
+  floors.forEach((fl)=>{
+    const y1 = fl.y + (fl.tiltY||0);  // y at x1
+    const y2 = fl.y - (fl.tiltY||0);  // y at x2
+    ctx.beginPath();
+    ctx.moveTo(fl.x1,y1);
+    ctx.lineTo(fl.x2,y2);
+    ctx.stroke();
   });
   ctx.restore();
 
@@ -471,7 +576,7 @@ function drawBarrels(){
   ctx.save();
   barrels.forEach(b=>{
     const bounce=b.state==='ROLL'?Math.sin(frameCount*0.35+b.x*0.04)*1.5:0;
-    const by=b.y-8+bounce;
+    const by=b.y-0+bounce; // b.y is already offset from floor surface
     ctx.fillStyle=CLR.orange;ctx.shadowBlur=8;ctx.shadowColor=CLR.orange;
     ctx.beginPath();ctx.arc(b.x,by,8,0,Math.PI*2);ctx.fill();
     ctx.shadowBlur=0;ctx.strokeStyle='#884400';ctx.lineWidth=1.5;
@@ -511,7 +616,7 @@ function drawHUD(){
   }
   ctx.restore();
   ctx.save();ctx.font='bold 10px Courier New';ctx.textAlign='center';ctx.textBaseline='bottom';
-  ctx.fillStyle=CLR.dim;ctx.fillText('ARROWS/WASD · UP/DOWN NEAR LADDER TO CLIMB · REACH THE TOP',LW/2,LH-8);
+  ctx.fillStyle=CLR.dim;ctx.fillText('ARROWS/WASD · HOLD UP NEAR LADDER TO CLIMB · SPACE TO JUMP · REACH THE TOP',LW/2,LH-8);
   ctx.restore();
 }
 

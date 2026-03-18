@@ -76,7 +76,7 @@ function getTVRect(i) {
   const tvW = 220, tvH = 165;
   const padX = 60, padY = 85;
   const gapX = (LW - padX*2 - tvW*3) / 2;
-  const gapY = 18;
+  const gapY = 48;
   return { x: padX + col*(tvW+gapX), y: padY + row*(tvH+gapY+30), w: tvW, h: tvH };
 }
 
@@ -153,46 +153,49 @@ previews[1] = (() => {
   };
 })();
 
-// SPACE RAIDERS preview
+// SPACE RAIDERS preview (asteroid shooter)
 previews[2] = (() => {
-  let aliens=[],px=120,bullet=null,alienBullets=[],t2=0,dir=1,moveT=0;
-  for(let r=0;r<3;r++) for(let c=0;c<8;c++) aliens.push({x:20+c*26,y:20+r*18,alive:true});
+  let angle=0, bullets=[], asteroids=[], spawnT=0;
+  const cx=120, cy=90;
+  for(let i=0;i<4;i++){
+    const a=rnd2(0,Math.PI*2);
+    asteroids.push({x:cx+Math.cos(a)*100,y:cy+Math.sin(a)*80,dx:-Math.cos(a)*0.7,dy:-Math.sin(a)*0.7,r:10+Math.random()*8});
+  }
+  function rnd2(a,b){return a+Math.random()*(b-a);}
   return function(ctx2,t) {
     ctx2.fillStyle='#000814'; ctx2.fillRect(0,0,240,180);
-    t2++;
-    moveT++;
-    if(moveT>20){
-      moveT=0;
-      let hit=false;
-      aliens.forEach(a=>{if(a.alive){a.x+=dir*8;if(a.x>220||a.x<10)hit=true;}});
-      if(hit){dir*=-1;aliens.forEach(a=>{if(a.alive)a.y+=8;});}
-    }
-    aliens.forEach(a=>{
-      if(!a.alive)return;
-      ctx2.fillStyle='#39ff14'; ctx2.shadowBlur=6; ctx2.shadowColor='#39ff14';
-      ctx2.fillRect(a.x-5,a.y-4,10,8);
+    // stars
+    ctx2.fillStyle='#ffffff';
+    for(let i=0;i<20;i++){ctx2.globalAlpha=0.3+0.3*Math.sin(i+t*0.02);ctx2.fillRect((i*37)%240,(i*53)%180,1,1);}
+    ctx2.globalAlpha=1;
+    // auto rotate
+    angle+=0.025;
+    // spawn asteroids
+    spawnT++;
+    if(spawnT>90&&asteroids.length<5){spawnT=0;const a2=rnd2(0,Math.PI*2);asteroids.push({x:cx+Math.cos(a2)*110,y:cy+Math.sin(a2)*85,dx:-Math.cos(a2)*0.8,dy:-Math.sin(a2)*0.8,r:8+Math.random()*7});}
+    // move asteroids
+    asteroids.forEach(a=>{a.x+=a.dx;a.y+=a.dy;});
+    asteroids=asteroids.filter(a=>Math.hypot(a.x-cx,a.y-cy)>5&&Math.hypot(a.x-cx,a.y-cy)<130);
+    // shoot bullet every 50 frames
+    if(t%50===0) bullets.push({x:cx+Math.cos(angle)*8,y:cy+Math.sin(angle)*8,dx:Math.cos(angle)*3.5,dy:Math.sin(angle)*3.5,life:40});
+    // move bullets
+    bullets.forEach(b=>{b.x+=b.dx;b.y+=b.dy;b.life--;});
+    bullets=bullets.filter(b=>b.life>0);
+    // bullet-asteroid collision
+    bullets.forEach(b=>{asteroids=asteroids.filter(a=>{if(Math.hypot(a.x-b.x,a.y-b.y)<a.r+3){b.life=0;return false;}return true;});});
+    // draw asteroids
+    asteroids.forEach(a=>{
+      ctx2.strokeStyle='#aaaaaa'; ctx2.shadowBlur=5; ctx2.shadowColor='#888888'; ctx2.lineWidth=1.5;
+      ctx2.beginPath(); ctx2.arc(a.x,a.y,a.r,0,Math.PI*2); ctx2.stroke();
       ctx2.shadowBlur=0;
     });
-    // auto shoot
-    if(!bullet&&t2%40===0) bullet={x:px,y:165};
-    if(bullet){
-      bullet.y-=4;
-      ctx2.fillStyle='#39ff14'; ctx2.shadowBlur=8; ctx2.shadowColor='#39ff14';
-      ctx2.fillRect(bullet.x-1,bullet.y,2,8);
-      ctx2.shadowBlur=0;
-      let hit=false;
-      aliens.forEach(a=>{if(a.alive&&Math.abs(a.x-bullet.x)<8&&Math.abs(a.y-bullet.y)<8){a.alive=false;hit=true;}});
-      if(hit||bullet.y<0)bullet=null;
-    }
-    if(!aliens.some(a=>a.alive)){
-      for(let r=0;r<3;r++) for(let c=0;c<8;c++) aliens.push({x:20+c*26,y:20+r*18,alive:true});
-    }
-    px+=1.2; if(px>220){px=20;}
-    // player
+    // draw bullets
+    bullets.forEach(b=>{ctx2.fillStyle='#39ff14';ctx2.shadowBlur=6;ctx2.shadowColor='#39ff14';ctx2.beginPath();ctx2.arc(b.x,b.y,2,0,Math.PI*2);ctx2.fill();ctx2.shadowBlur=0;});
+    // draw ship (triangle)
+    ctx2.save(); ctx2.translate(cx,cy); ctx2.rotate(angle);
     ctx2.fillStyle='#39ff14'; ctx2.shadowBlur=8; ctx2.shadowColor='#39ff14';
-    ctx2.fillRect(px-7,168,14,8);
-    ctx2.fillRect(px-2,163,4,6);
-    ctx2.shadowBlur=0;
+    ctx2.beginPath(); ctx2.moveTo(0,-7); ctx2.lineTo(5,6); ctx2.lineTo(-5,6); ctx2.closePath(); ctx2.fill();
+    ctx2.shadowBlur=0; ctx2.restore();
     ctx2.font='bold 8px Courier New'; ctx2.fillStyle='#39ff14'; ctx2.textAlign='left';
     ctx2.fillText('SPACE RAIDERS',4,10);
   };

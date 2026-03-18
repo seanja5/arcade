@@ -35,8 +35,7 @@ let gstate='MENU';
 let diff=null;
 let scrollPx=0, scrollSpeed=0;
 let frogRow=2, frogColF=9.0;
-let score=0, maxRow=0, lives=3;
-let invincible=0;
+let score=0, maxRow=0;
 let particles=[];
 let frameCount=0;
 let keyQueue=[];
@@ -87,7 +86,7 @@ function startGame(idx){
   scrollPx=0;
   scrollSpeed=diff.initSpeed;
   frogRow=2;frogColF=9.0;
-  score=0;maxRow=0;lives=3;invincible=0;
+  score=0;maxRow=0;
   particles=[];keyQueue=[];
   worldRows=new Map();generatedUpTo=-1;
   frameCount=0;
@@ -107,6 +106,7 @@ function generateRow(r){
     else if(pos===6)type='GRASS';
     else type='RIVER';
   }
+  if(type==='ROAD'&&r>6&&Math.random()<0.25)type='TRAIN';
   if(type==='ROAD'||type==='RIVER'){
     dir=(r%2===0)?1:-1;
     const section=Math.floor(r/10);
@@ -127,8 +127,22 @@ function generateRow(r){
         objs.push({x:i*spacing+Math.random()*20,w:w});
       }
     }
+    worldRows.set(r,{type,dir:dir||1,spd:spd||1,objs});
+  } else if(type==='TRAIN'){
+    dir=(r%2===0)?1:-1;
+    worldRows.set(r,{
+      type:'TRAIN',
+      dir:dir,
+      spd:0,
+      objs:[],
+      trainX:null,
+      trainW:300,
+      trainTimer:Math.floor(150+Math.random()*300),
+      trainWarning:false
+    });
+  } else {
+    worldRows.set(r,{type,dir:1,spd:1,objs});
   }
-  worldRows.set(r,{type,dir:dir||1,spd:spd||1,objs});
 }
 
 function generateWorldUpTo(maxR){
@@ -165,16 +179,10 @@ function drawParticles(){
 }
 
 function die(){
-  if(invincible>0)return;
   const fx=frogColF*CELL+CELL/2;
   const fy=rowScreenY(frogRow)+CELL/2;
-  burst(fx,fy,CLR.purple,20);
-  lives--;
-  if(lives<=0){gstate='GAMEOVER';return;}
-  invincible=120;
-  const minRow=Math.floor(scrollPx/CELL)+1;
-  frogRow=Math.max(frogRow,minRow+1);
-  frogColF=9.0;
+  burst(fx,fy,CLR.purple,30);
+  gstate='GAMEOVER';
 }
 
 function updateGame(){
@@ -196,6 +204,23 @@ function updateGame(){
         if(obj.x>LW+obj.w)obj.x=-obj.w;
         if(obj.x<-obj.w)obj.x=LW+obj.w;
       });
+    }
+    if(row.type==='TRAIN'){
+      row.trainTimer--;
+      row.trainWarning=row.trainTimer>0&&row.trainTimer<90;
+      if(row.trainTimer<=0&&row.trainX===null){
+        row.trainX=row.dir>0?-(row.trainW+10):LW+10;
+      }
+      if(row.trainX!==null){
+        const trainSpd=14;
+        row.trainX+=row.dir*trainSpd;
+        const gone=row.dir>0?row.trainX>LW+row.trainW+10:row.trainX<-(row.trainW+10);
+        if(gone){
+          row.trainX=null;
+          row.trainTimer=Math.floor(200+Math.random()*400);
+          row.trainWarning=false;
+        }
+      }
     }
   });
 
@@ -242,17 +267,22 @@ function updateGame(){
     } else if(row.type==='ROAD'){
       // Check car collision
       const fx=frogColF*CELL+CELL/2;
-      const fy=rowScreenY(frogRow)+CELL/2;
       for(const obj of row.objs){
-        // Car occupies obj.x to obj.x+obj.w, vertically in the row
         if(fx>=obj.x-4&&fx<=obj.x+obj.w+4){
           die();return;
         }
       }
+    } else if(row.type==='TRAIN'){
+      if(row.trainX!==null){
+        const fx=frogColF*CELL+CELL/2;
+        if(fx>=row.trainX-4&&fx<=row.trainX+row.trainW+4){
+          die();return;
+        }
+      }
+      // Standing on tracks with no train = safe (just wait for it)
     }
   }
 
-  if(invincible>0)invincible--;
   tickParticles();
 }
 
@@ -337,14 +367,72 @@ function drawRow(r,row,sy){
       ctx.fillStyle='#663300';ctx.shadowBlur=6;ctx.shadowColor='#884400';
     });
     ctx.restore();
+  } else if(row.type==='TRAIN'){
+    // Background: dark gravel
+    ctx.fillStyle='#1a1410';
+    ctx.fillRect(0,sy,LW,CELL);
+
+    // Train tracks: two rails + crossties
+    ctx.save();
+    // Crossties (wooden sleepers)
+    ctx.fillStyle='#3d2b1a';
+    for(let tx=0;tx<LW;tx+=22){
+      ctx.fillRect(tx,sy+8,14,CELL-16);
+    }
+    // Rails (two parallel metal lines)
+    ctx.fillStyle='#888888';
+    ctx.shadowBlur=4;ctx.shadowColor='#aaaaaa';
+    ctx.fillRect(0,sy+10,LW,4);
+    ctx.fillRect(0,sy+CELL-14,LW,4);
+    ctx.shadowBlur=0;
+
+    // Warning signal: red light shown before train arrives
+    if(row.trainWarning){
+      const sigX=row.dir>0?30:LW-30;
+      const blink=Math.floor(frameCount/6)%2===0;
+      if(blink){
+        ctx.fillStyle='#ff2d00';
+        ctx.shadowBlur=16;ctx.shadowColor='#ff4400';
+        ctx.beginPath();ctx.arc(sigX,sy+CELL/2,8,0,Math.PI*2);ctx.fill();
+        ctx.shadowBlur=0;
+      }
+      // Signal post
+      ctx.fillStyle='#555';
+      ctx.fillRect(sigX-2,sy+2,4,CELL-4);
+    }
+
+    // Draw train if active
+    if(row.trainX!==null){
+      const tx=row.trainX;
+      const tw=row.trainW;
+      ctx.save();
+      // Train body
+      ctx.fillStyle='#cc3300';
+      ctx.shadowBlur=10;ctx.shadowColor='#ff4400';
+      ctx.fillRect(tx,sy+4,tw,CELL-8);
+      // Train windows
+      ctx.fillStyle='rgba(255,220,100,0.6)';
+      for(let wx=tx+12;wx<tx+tw-20;wx+=30){
+        ctx.fillRect(wx,sy+8,18,CELL-20);
+      }
+      // Front/back details
+      ctx.fillStyle='#ff5500';
+      ctx.fillRect(row.dir>0?tx+tw-10:tx,sy+4,10,CELL-8);
+      // Wheels (circles)
+      ctx.fillStyle='#222';
+      ctx.shadowBlur=0;
+      for(let wx=tx+20;wx<tx+tw-10;wx+=40){
+        ctx.beginPath();ctx.arc(wx,sy+CELL-6,6,0,Math.PI*2);ctx.fill();
+      }
+      ctx.restore();
+    }
+    ctx.restore();
   }
 }
 
 function drawFrog(){
   const fx=frogColF*CELL+CELL/2;
   const fy=rowScreenY(frogRow)+CELL/2;
-
-  if(invincible>0&&Math.floor(frameCount/4)%2===0)return;
 
   ctx.save();
   // Body
@@ -369,14 +457,13 @@ function drawHUD(){
   ctx.font='bold 18px Courier New';ctx.textBaseline='top';
   ctx.textAlign='left';ctx.fillStyle=CLR.ui;ctx.shadowBlur=12;ctx.shadowColor=CLR.ui;
   ctx.fillText(`SCORE: ${score}`,20,12);
-  ctx.textAlign='right';ctx.fillStyle=CLR.enemy;ctx.shadowColor=CLR.enemy;
-  ctx.fillText(`LIVES: ${lives}`,LW-20,12);
+  ctx.textAlign='right';ctx.fillStyle=CLR.purple;ctx.shadowColor=CLR.purple;
+  ctx.fillText(`DIST: ${maxRow}`,LW-20,12);
   ctx.textAlign='center';ctx.fillStyle=CLR.purple;ctx.shadowColor=CLR.purple;
-  ctx.fillText(`DIST: ${maxRow}`,LW/2,12);
-  if(diff){ctx.font='bold 12px Courier New';ctx.fillStyle=diff.color;ctx.shadowColor=diff.color;ctx.fillText(diff.label,LW/2,34);}
+  if(diff){ctx.font='bold 12px Courier New';ctx.fillStyle=diff.color;ctx.shadowColor=diff.color;ctx.fillText(diff.label,LW/2,12);}
   ctx.restore();
   ctx.save();ctx.font='bold 10px Courier New';ctx.textAlign='center';ctx.textBaseline='bottom';
-  ctx.fillStyle=CLR.dim;ctx.fillText('ARROWS/WASD · HOP FORWARD BEFORE SCROLLED OFF',LW/2,LH-8);
+  ctx.fillStyle=CLR.dim;ctx.fillText('ARROWS/WASD · CROSS ROAD · AVOID TRAINS · STAY ON LOGS · ESC = MENU',LW/2,LH-8);
   ctx.restore();
 }
 
@@ -426,7 +513,7 @@ function drawMenu(){
     if(hov)label('▶',bx+18,by+bh/2,14,d.color);
     ctx.restore();
   });
-  label('ARROWS/WASD · HOP FORWARD · DON\'T GET SCROLLED OFF · ESC = MENU',LW/2,LH-22,12,CLR.dim);
+  label('ARROWS/WASD · ONE HIT = DEAD · DON\'T FALL IN WATER · ESC = MENU',LW/2,LH-22,12,CLR.dim);
   drawBackBtn();drawScanlines();
 }
 
