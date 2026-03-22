@@ -683,10 +683,14 @@ function label(text,x,y,size,color,align='center'){
   ctx.fillText(text,x,y);ctx.restore();
 }
 
+let _menuGradient=null;
 function drawMenu(){
-  const grad=ctx.createRadialGradient(LW/2,LH/2,80,LW/2,LH/2,500);
-  grad.addColorStop(0,'#1a0a00');grad.addColorStop(1,CLR.bg);
-  ctx.fillStyle=grad;ctx.fillRect(0,0,LW,LH);
+  if(!_menuGradient){
+    _menuGradient=ctx.createRadialGradient(LW/2,LH/2,80,LW/2,LH/2,500);
+    _menuGradient.addColorStop(0,'#1a0a00');
+    _menuGradient.addColorStop(1,CLR.bg);
+  }
+  ctx.fillStyle=_menuGradient;ctx.fillRect(0,0,LW,LH);
   ctx.save();ctx.font='bold 90px Courier New';ctx.textAlign='center';ctx.textBaseline='middle';
   const pulse=0.8+0.2*Math.sin(Date.now()/600);
   ctx.shadowBlur=55*pulse;ctx.shadowColor=CLR.orange;ctx.fillStyle=CLR.orange;

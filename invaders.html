@@ -445,10 +445,14 @@ function updateGame(){
   tickParticles();
 }
 
+let _menuGradient=null;
 function drawMenu(){
-  const grad=ctx.createRadialGradient(LW/2,LH/2,80,LW/2,LH/2,500);
-  grad.addColorStop(0,'#001400'); grad.addColorStop(1,CLR.bg);
-  ctx.fillStyle=grad; ctx.fillRect(0,0,LW,LH);
+  if(!_menuGradient){
+    _menuGradient=ctx.createRadialGradient(LW/2,LH/2,80,LW/2,LH/2,500);
+    _menuGradient.addColorStop(0,'#001400');
+    _menuGradient.addColorStop(1,CLR.bg);
+  }
+  ctx.fillStyle=_menuGradient; ctx.fillRect(0,0,LW,LH);
 
   // Warp starfield on menu
   drawStarfield(0.6);

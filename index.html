@@ -333,6 +333,16 @@ const tvCanvases = GAMES.map(()=>{
   c.width = 240; c.height = 180;
   return c;
 });
+const tvContexts = tvCanvases.map(c => c.getContext('2d'));
+
+function updatePreviewCanvases() {
+  for (let i = 0; i < previews.length; i++) {
+    previews[i](tvContexts[i], frameCount);
+  }
+}
+
+// Prime all previews once so first paint is populated.
+for (let i = 0; i < previews.length; i++) previews[i](tvContexts[i], 0);
 
 // Pre-rendered TV overlay (scanlines + vignette) — built once, shared by all TVs
 const tvOverlay = (() => {
@@ -386,10 +396,7 @@ function drawTV(i) {
   const lift = hovered ? -8 : 0;
   const glowA = hovered ? 0.9 : 0.4;
 
-  // Update preview canvas
   const tc = tvCanvases[i];
-  const tctx = tc.getContext('2d');
-  previews[i](tctx, frameCount);
 
   ctx.save();
   ctx.translate(tv.x + tv.w/2, tv.y + tv.h/2 + lift);
@@ -417,12 +424,6 @@ function drawTV(i) {
 
   ctx.shadowBlur = 0;
 
-  // Screen area with clipping
-  ctx.save();
-  ctx.beginPath();
-  roundRect(ctx, -tv.w/2, -tv.h/2, tv.w, tv.h, 6);
-  ctx.clip();
-
   // Draw preview
   ctx.drawImage(tc, -tv.w/2, -tv.h/2, tv.w, tv.h);
 
@@ -436,8 +437,6 @@ function drawTV(i) {
   ctx.beginPath();
   roundRect(ctx, -tv.w/2, -tv.h/2, tv.w, tv.h, 6);
   ctx.stroke();
-
-  ctx.restore();
 
   // TV stand
   ctx.fillStyle = '#222';
@@ -529,6 +528,7 @@ function loop() {
   ctx.save();
   ctx.scale(scaleX(), scaleY());
 
+  updatePreviewCanvases();
   drawBackground();
   drawTitle();
   for (let i = 0; i < 6; i++) drawTV(i);
