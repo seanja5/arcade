@@ -1,0 +1,4 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #000814; overflow: hidden; user-select: none; cursor: none; }
+canvas { display: block; }
+#cursor { position: fixed; top: 0; left: 0; pointer-events: none; }
