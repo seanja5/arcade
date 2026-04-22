@@ -93,8 +93,8 @@ document.addEventListener('keydown',e=>{
     if(e.code==='Digit3')startGame(2);
   }
   if(gstate==='GAMEOVER'&&(e.code==='Enter'||e.code==='Space'))gstate='MENU';
-  if(gstate==='PLAY'&&e.code==='Escape')gstate='MENU';
-  if(gstate==='WIN'&&(e.code==='Enter'||e.code==='Space')){initLevel();gstate='PLAY';}
+  if(gstate==='PLAY'&&e.code==='Escape'){ARC.music.stop();gstate='MENU';}
+  if(gstate==='WIN'&&(e.code==='Enter'||e.code==='Space')){initLevel();gstate='PLAY';ARC.music.play('apeclimb');}
   if(gstate==='PLAY'){
     if(e.code==='Space'&&!player.onLadder&&player.onGround)doJump();
   }
@@ -107,7 +107,7 @@ canvas.addEventListener('click',e=>{
   if(inBackBtn(mx,my)){window.location.href='index.html';return;}
   if(gstate==='MENU')for(let i=0;i<3;i++)if(inDiffBtn(i,mx,my))startGame(i);
   if(gstate==='GAMEOVER')gstate='MENU';
-  if(gstate==='WIN'){initLevel();gstate='PLAY';}
+  if(gstate==='WIN'){initLevel();gstate='PLAY';ARC.music.play('apeclimb');}
 });
 
 function inDiffBtn(i,mx,my){const bx=LW/2-160,by=270+i*62;return mx>=bx&&mx<=bx+320&&my>=by&&my<=by+48;}
@@ -153,6 +153,7 @@ function startGame(idx){
   diff=DIFFS[idx]; score=0; lives=3; level=1;
   initLevel();
   gstate='PLAY';
+  ARC.music.play('apeclimb');
 }
 
 function initLevel(){
@@ -174,6 +175,7 @@ function initLevel(){
 function doJump(){
   player.vy=JUMP_VEL;
   player.onGround=false;
+  ARC.sfx.apeclimb.jump();
 }
 
 function burst(x,y,color,n){
@@ -201,8 +203,9 @@ function drawParticles(){
 function loseLife(){
   if(player.invincible>0)return;
   burst(player.x+PLAYER_W/2,player.y+PLAYER_H/2,CLR.player,20);
+  ARC.sfx.apeclimb.barrelHitDeath();
   lives--;
-  if(lives<=0){gstate='GAMEOVER';return;}
+  if(lives<=0){ARC.music.stop();gstate='GAMEOVER';return;}
   player.invincible=120;
   const floors=getFloors();
   const bf=floors[0];
@@ -236,16 +239,20 @@ function updateMallet(){
       malletItem.visible=false;
       playerMallet.active=true;
       playerMallet.timer=600;
+      playerMallet._swungSound=false;
+      ARC.sfx.apeclimb.malletPickup();
     }
   }
   if(playerMallet.active){
     playerMallet.timer--;
+    if(!playerMallet._swungSound){playerMallet._swungSound=true;ARC.sfx.apeclimb.malletSwing();}
     const swingX=player.facingRight?player.x+PLAYER_W+28:player.x-28;
     const swingY=player.y+PLAYER_H/2;
     barrels=barrels.filter(b=>{
       if(Math.abs(b.x-swingX)<38&&Math.abs(b.y-swingY)<22){
         burst(b.x,b.y,CLR.ui,10);
         score+=300;
+        ARC.sfx.apeclimb.barrelDestroy();
         return false;
       }
       return true;
@@ -258,6 +265,7 @@ function updatePlayer(){
   const floors=getFloors();
   const ladders=getLadders();
   if(player.invincible>0)player.invincible--;
+  const _wasOnGround=player.onGround;
 
   if(player.onLadder){
     // Snap x to ladder
@@ -372,6 +380,8 @@ function updatePlayer(){
     player.x=clamp(player.x,fl.x1,fl.x2-PLAYER_W);
   }
 
+  if(!_wasOnGround&&player.onGround)ARC.sfx.apeclimb.land();
+
   if(player.y>LH+60)loseLife();
 }
 
@@ -461,6 +471,7 @@ function updateBarrels(){
       const pcy=player.y+PLAYER_H;
       if(Math.abs(b.x-pcx)<32&&Math.abs(b.y-pcy)<22){
         score+=100;b.scored=true;
+        ARC.sfx.apeclimb.dodgeScore();
       }
     }
 
@@ -487,6 +498,8 @@ function checkWin(){
     level++;
     if(level>LEVEL_CONFIGS.length)level=LEVEL_CONFIGS.length;
     burst(pcx,player.y,CLR.ui,30);
+    ARC.sfx.apeclimb.win();
+    ARC.music.stop();
     gstate='WIN';winTimer=120;
   }
 }

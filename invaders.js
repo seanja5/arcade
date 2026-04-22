@@ -63,7 +63,7 @@ document.addEventListener('keydown',e=>{
     if(e.code==='Digit3')startGame(2);
   }
   if(gstate==='GAMEOVER'&&(e.code==='Enter'||e.code==='Space'))gstate='MENU';
-  if(gstate==='PLAY'&&e.code==='Escape')gstate='MENU';
+  if(gstate==='PLAY'&&e.code==='Escape'){ARC.music.stop();gstate='MENU';}
 });
 document.addEventListener('keyup',e=>{delete keys[e.code];});
 canvas.addEventListener('click',e=>{
@@ -71,7 +71,7 @@ canvas.addEventListener('click',e=>{
   const mx=(e.clientX-r.left)/scaleX(), my=(e.clientY-r.top)/scaleY();
   if(inBackBtn(mx,my)){window.location.href='index.html';return;}
   if(gstate==='MENU')for(let i=0;i<3;i++)if(inDiffBtn(i,mx,my))startGame(i);
-  if(gstate==='GAMEOVER')gstate='MENU';
+  if(gstate==='GAMEOVER'){ARC.music.stop();gstate='MENU';}
 });
 
 function inDiffBtn(i,mx,my){const bx=LW/2-160,by=270+i*62;return mx>=bx&&mx<=bx+320&&my>=by&&my<=by+48;}
@@ -129,6 +129,7 @@ function startGame(idx){
   bullets=[]; asteroids=[]; particles=[];
   spawnTimer=0; frameCount=0; shootCooldown=0;
   gstate='PLAY';
+  ARC.music.play('invaders');
 }
 
 // Particles
@@ -308,6 +309,7 @@ function tryShoot(){
     life:BULLET_LIFE,
   });
   shootCooldown=12;
+  ARC.sfx.invaders.laser();
 }
 
 function circlesOverlap(ax,ay,ar,bx,by,br){
@@ -335,6 +337,7 @@ function updateGame(){
     level=newLevel;
     // Brief invincibility on level up
     if(ship.invincible<30)ship.invincible=30;
+    ARC.sfx.invaders.levelUp();
   }
 
   // Spawn asteroids
@@ -384,6 +387,7 @@ function updateGame(){
     hitIndices.add(i);
     score+=a.points;
     levelScore+=a.points;
+    ARC.sfx.invaders.asteroidHit(a.size);
     const def=AST_SIZES[a.size];
     const burstColor=a.size==='large'?'#888888':a.size==='medium'?'#aaaaaa':'#cccccc';
     burst(a.x,a.y,burstColor,a.size==='large'?18:a.size==='medium'?12:8);
@@ -422,7 +426,8 @@ function updateGame(){
         burst(ship.x,ship.y,CLR.player,22);
         burst(ship.x,ship.y,CLR.enemy,10,2,4);
         ship.invincible=INVINCIBLE_FRAMES;
-        if(lives<=0){gstate='GAMEOVER';}
+        ARC.sfx.invaders.shipHit();
+        if(lives<=0){ARC.sfx.invaders.gameOver();ARC.music.stop();gstate='GAMEOVER';}
         break;
       }
     }

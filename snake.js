@@ -46,16 +46,16 @@ document.addEventListener('keydown',e=>{
     if(e.code==='Digit4')startGame(3);
   }
   if(gstate==='GAMEOVER'&&(e.code==='Enter'||e.code==='Space'))gstate='MENU';
-  if(gstate==='PLAY'&&e.code==='Escape')gstate='MENU';
+  if(gstate==='PLAY'&&e.code==='Escape'){ARC.music.stop();gstate='MENU';}
 
   // Direction input — prevent reversing
   const now=Date.now();
   if(now-lastKeyTime<60)return;
   if(gstate==='PLAY'){
-    if((e.code==='ArrowUp'||e.code==='KeyW')&&dy===0){ndx=0;ndy=-1;lastKeyTime=now;}
-    if((e.code==='ArrowDown'||e.code==='KeyS')&&dy===0){ndx=0;ndy=1;lastKeyTime=now;}
-    if((e.code==='ArrowLeft'||e.code==='KeyA')&&dx===0){ndx=-1;ndy=0;lastKeyTime=now;}
-    if((e.code==='ArrowRight'||e.code==='KeyD')&&dx===0){ndx=1;ndy=0;lastKeyTime=now;}
+    if((e.code==='ArrowUp'||e.code==='KeyW')&&dy===0){ndx=0;ndy=-1;lastKeyTime=now;ARC.sfx.snake.dirChange();}
+    if((e.code==='ArrowDown'||e.code==='KeyS')&&dy===0){ndx=0;ndy=1;lastKeyTime=now;ARC.sfx.snake.dirChange();}
+    if((e.code==='ArrowLeft'||e.code==='KeyA')&&dx===0){ndx=-1;ndy=0;lastKeyTime=now;ARC.sfx.snake.dirChange();}
+    if((e.code==='ArrowRight'||e.code==='KeyD')&&dx===0){ndx=1;ndy=0;lastKeyTime=now;ARC.sfx.snake.dirChange();}
   }
 });
 document.addEventListener('keyup',e=>{delete keys[e.code];});
@@ -78,6 +78,8 @@ function startGame(idx){
   snake=[{x:15,y:10},{x:14,y:10},{x:13,y:10}];
   placeFood();
   gstate='PLAY';
+  ARC.music.play('snake');
+  ARC.resetFoodPitch();
 }
 
 function placeFood(){
@@ -241,6 +243,7 @@ function updateGame(){
     score+=10; length++;
     const pos=cellToScreen(food.x,food.y);
     burst(pos.x+CELL_W/2,pos.y+CELL_H/2,'#ff2d78',12);
+    ARC.sfx.snake.eatFood();
     placeFood();
   } else {
     snake.pop();
@@ -254,6 +257,8 @@ function gameover(){
   const pos=cellToScreen(snake[0].x,snake[0].y);
   burst(pos.x+CELL_W/2,pos.y+CELL_H/2,CLR.ui,25);
   if(score>highScore) highScore=score;
+  ARC.sfx.snake.death();
+  ARC.music.stop();
   gstate='GAMEOVER';
 }
 

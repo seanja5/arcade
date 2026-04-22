@@ -45,7 +45,7 @@ document.addEventListener('keydown',e=>{
     if(e.code==='Digit3')startGame(2);
   }
   if(gstate==='GAMEOVER'&&(e.code==='Enter'||e.code==='Space'))gstate='MENU';
-  if(gstate==='PLAY'&&e.code==='Escape')gstate='MENU';
+  if(gstate==='PLAY'&&e.code==='Escape'){ARC.music.stop();gstate='MENU';}
   if(gstate==='PLAY'){
     if(e.code==='ArrowUp'||e.code==='KeyW')keyQueue.push('UP');
     if(e.code==='ArrowDown'||e.code==='KeyS')keyQueue.push('DOWN');
@@ -78,6 +78,7 @@ function startGame(idx){
   frameCount=0;
   generateWorldUpTo(ROWS_VISIBLE+5);
   gstate='PLAY';
+  ARC.music.play('frogger');
 }
 
 function generateRow(r){
@@ -170,10 +171,15 @@ function drawParticles(){
   });
 }
 
-function die(){
+function die(reason){
   const fx=frogColF*CELL+CELL/2;
   const fy=rowScreenY(frogRow)+CELL/2;
   burst(fx,fy,CLR.purple,30);
+  if(reason==='water') ARC.sfx.frogger.waterDeath();
+  else if(reason==='train') ARC.sfx.frogger.trainHit();
+  else ARC.sfx.frogger.carDeath();
+  setTimeout(()=>ARC.sfx.frogger.gameOver(),350);
+  ARC.music.stop();
   gstate='GAMEOVER';
 }
 
@@ -204,6 +210,7 @@ function updateGame(){
     if(row.type==='TRAIN'){
       row.trainTimer--;
       row.trainWarning=row.trainTimer>0&&row.trainTimer<90;
+      if(row.trainWarning&&frameCount%30===0)ARC.sfx.frogger.trainWarning();
       if(row.trainTimer<=0&&row.trainX===null){
         row.trainX=row.dir>0?-(row.trainW+10):LW+10;
       }
@@ -234,12 +241,13 @@ function updateGame(){
     } else if(hop==='RIGHT'){
       frogColF=Math.min(COLS-1,frogColF+1);
     }
+    ARC.sfx.frogger.hop();
   }
 
   // Check frog scrolled off bottom
   const frogScreenY=rowScreenY(frogRow);
   if(frogScreenY>LH+CELL/2){
-    die();
+    die('car');
     return;
   }
 
@@ -258,21 +266,21 @@ function updateGame(){
           break;
         }
       }
-      if(!onLog){die();return;}
-      if(frogColF<0||frogColF>=COLS){die();return;}
+      if(!onLog){die('water');return;}
+      if(frogColF<0||frogColF>=COLS){die('water');return;}
     } else if(row.type==='ROAD'){
       // Check car collision
       const fx=frogColF*CELL+CELL/2;
       for(const obj of row.objs){
         if(fx>=obj.x-4&&fx<=obj.x+obj.w+4){
-          die();return;
+          die('car');return;
         }
       }
     } else if(row.type==='TRAIN'){
       if(row.trainX!==null){
         const fx=frogColF*CELL+CELL/2;
         if(fx>=row.trainX-4&&fx<=row.trainX+row.trainW+4){
-          die();return;
+          die('train');return;
         }
       }
       // Standing on tracks with no train = safe (just wait for it)

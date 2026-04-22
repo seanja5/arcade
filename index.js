@@ -51,6 +51,7 @@ canvas.addEventListener('click', e => {
   GAMES.forEach((g, i) => {
     const tv = getTVRect(i);
     if (mx >= tv.x && mx <= tv.x + tv.w && my >= tv.y && my <= tv.y + tv.h + 50) {
+      ARC.music.stop();
       window.location.href = g.url;
     }
   });
@@ -531,5 +532,10 @@ if (!CanvasRenderingContext2D.prototype.roundRect) {
     return this;
   };
 }
+
+// Start lobby music on first user interaction (AudioContext requires gesture)
+window.addEventListener('pointerdown', () => {
+  ARC.music.play('lobby');
+}, { once: true, passive: true });
 
 loop();

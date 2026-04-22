@@ -78,8 +78,8 @@ document.addEventListener('keydown', e => {
                 Numpad1:0,Numpad2:1,Numpad3:2,Numpad4:3,Numpad5:4 };
     if (k[e.code] !== undefined) startGame(k[e.code]);
   }
-  if (gstate === 'WIN'  && (e.code === 'Enter' || e.code === 'Space')) gstate = 'MENU';
-  if (gstate === 'PLAY' && e.code === 'Escape') gstate = 'MENU';
+  if (gstate === 'WIN'  && (e.code === 'Enter' || e.code === 'Space')) { ARC.music.stop(); gstate = 'MENU'; }
+  if (gstate === 'PLAY' && e.code === 'Escape') { ARC.music.stop(); gstate = 'MENU'; }
 });
 document.addEventListener('keyup', e => { delete keys[e.code]; });
 
@@ -96,7 +96,7 @@ canvas.addEventListener('click', e => {
       if (inBtn(i, mx, my)) startGame(i);
     });
   }
-  if (gstate === 'WIN') gstate = 'MENU';
+  if (gstate === 'WIN') { ARC.music.stop(); gstate = 'MENU'; }
 });
 
 function inBtn(i, mx, my) {
@@ -123,6 +123,7 @@ function startGame(idx) {
   aiPad.y      = LH/2 - PH/2;
   launchBall(Math.random() < 0.5 ? 1 : -1);
   gstate = 'PLAY';
+  ARC.music.play('pong');
 }
 
 function launchBall(dir) {
@@ -408,8 +409,8 @@ function updateGame() {
   if (trail.length > 10) trail.shift();
   ball.x += ball.dx;
   ball.y += ball.dy;
-  if (ball.y - ball.r < 0)  { ball.y = ball.r;      ball.dy =  Math.abs(ball.dy); burst(ball.x, 0,  '#8888ff', 5); }
-  if (ball.y + ball.r > LH) { ball.y = LH - ball.r; ball.dy = -Math.abs(ball.dy); burst(ball.x, LH, '#8888ff', 5); }
+  if (ball.y - ball.r < 0)  { ball.y = ball.r;      ball.dy =  Math.abs(ball.dy); burst(ball.x, 0,  '#8888ff', 5); ARC.sfx.pong.wallBounce(); }
+  if (ball.y + ball.r > LH) { ball.y = LH - ball.r; ball.dy = -Math.abs(ball.dy); burst(ball.x, LH, '#8888ff', 5); ARC.sfx.pong.wallBounce(); }
   if (ball.dx < 0 &&
       ball.x - ball.r < player.x + player.w &&
       ball.x + ball.r > player.x &&
@@ -423,6 +424,7 @@ function updateGame() {
     ball.dy = Math.sin(ang) * ball.spd;
     burst(ball.x, ball.y, CLR.player, 12);
     shakeX = rnd(-4, 4); shakeY = rnd(-4, 4);
+    ARC.sfx.pong.paddleHit();
   }
   if (ball.dx > 0 &&
       ball.x + ball.r > aiPad.x &&
@@ -437,21 +439,22 @@ function updateGame() {
     ball.dy = Math.sin(ang) * ball.spd;
     burst(ball.x, ball.y, CLR.ai, 12);
     shakeX = rnd(-4, 4); shakeY = rnd(-4, 4);
+    ARC.sfx.pong.paddleHit();
   }
   if (ball.x + ball.r < 0) {
     score.ai++; lastScorer = 'ai'; flashTimer = 18; trail = [];
     burst(0, ball.y, CLR.ai, 22);
     shakeX = -8; shakeY = rnd(-4, 4);
     ball.dx = 0; ball.dy = 0; ball.x = LW/2; ball.y = LH/2;
-    if (score.ai >= WIN) { gstate = 'WIN'; }
-    else { respawnTimer = RESPAWN_FRAMES; respawnDir = 1; }
+    if (score.ai >= WIN) { ARC.sfx.pong.lose(); ARC.music.stop(); gstate = 'WIN'; }
+    else { ARC.sfx.pong.aiScore(); respawnTimer = RESPAWN_FRAMES; respawnDir = 1; }
   } else if (ball.x - ball.r > LW) {
     score.p++; lastScorer = 'p'; flashTimer = 18; trail = [];
     burst(LW, ball.y, CLR.player, 22);
     shakeX = 8; shakeY = rnd(-4, 4);
     ball.dx = 0; ball.dy = 0; ball.x = LW/2; ball.y = LH/2;
-    if (score.p >= WIN) { gstate = 'WIN'; }
-    else { respawnTimer = RESPAWN_FRAMES; respawnDir = -1; }
+    if (score.p >= WIN) { ARC.sfx.pong.win(); ARC.music.stop(); gstate = 'WIN'; }
+    else { ARC.sfx.pong.playerScore(); respawnTimer = RESPAWN_FRAMES; respawnDir = -1; }
   }
   tickParticles();
 }

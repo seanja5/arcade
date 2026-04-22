@@ -53,8 +53,8 @@ document.addEventListener('keydown',e=>{
     if(e.code==='Digit2')startGame(1);
     if(e.code==='Digit3')startGame(2);
   }
-  if((gstate==='WIN'||gstate==='GAMEOVER')&&(e.code==='Enter'||e.code==='Space'))gstate='MENU';
-  if(gstate==='PLAY'&&e.code==='Escape')gstate='MENU';
+  if((gstate==='WIN'||gstate==='GAMEOVER')&&(e.code==='Enter'||e.code==='Space')){ARC.music.stop();gstate='MENU';}
+  if(gstate==='PLAY'&&e.code==='Escape'){ARC.music.stop();gstate='MENU';}
   if(gstate==='PLAY'&&(e.code==='Space')&&!launched)launchBall();
 });
 document.addEventListener('keyup',e=>{delete keys[e.code];});
@@ -63,7 +63,7 @@ canvas.addEventListener('click',e=>{
   const mx=(e.clientX-r.left)/scaleX(), my=(e.clientY-r.top)/scaleY();
   if(inBackBtn(mx,my)){window.location.href='index.html';return;}
   if(gstate==='MENU')for(let i=0;i<3;i++)if(inDiffBtn(i,mx,my))startGame(i);
-  if(gstate==='WIN'||gstate==='GAMEOVER')gstate='MENU';
+  if(gstate==='WIN'||gstate==='GAMEOVER'){ARC.music.stop();gstate='MENU';}
   if(gstate==='PLAY'&&!launched)launchBall();
 });
 
@@ -76,6 +76,7 @@ function startGame(idx){
   diff=DIFFS[idx]; score=0; lives=3; level=1;
   setupLevel();
   gstate='PLAY';
+  ARC.music.play('breakout');
 }
 
 function setupLevel(){
@@ -106,6 +107,7 @@ function launchBall(){
   ball.dx=Math.sin(angle)*ball.spd;
   ball.dy=-Math.cos(angle)*ball.spd;
   launched=true;
+  ARC.sfx.breakout.launch();
 }
 
 function burst(x,y,color,n){
@@ -241,9 +243,9 @@ function updateGame(){
   ball.x+=ball.dx; ball.y+=ball.dy;
 
   // Wall bounces
-  if(ball.x-BALL_R<0){ball.x=BALL_R;ball.dx=Math.abs(ball.dx);burst(0,ball.y,'#8888ff',4);}
-  if(ball.x+BALL_R>LW){ball.x=LW-BALL_R;ball.dx=-Math.abs(ball.dx);burst(LW,ball.y,'#8888ff',4);}
-  if(ball.y-BALL_R<0){ball.y=BALL_R;ball.dy=Math.abs(ball.dy);burst(ball.x,0,'#8888ff',4);}
+  if(ball.x-BALL_R<0){ball.x=BALL_R;ball.dx=Math.abs(ball.dx);burst(0,ball.y,'#8888ff',4);ARC.sfx.breakout.wallBounce();}
+  if(ball.x+BALL_R>LW){ball.x=LW-BALL_R;ball.dx=-Math.abs(ball.dx);burst(LW,ball.y,'#8888ff',4);ARC.sfx.breakout.wallBounce();}
+  if(ball.y-BALL_R<0){ball.y=BALL_R;ball.dy=Math.abs(ball.dy);burst(ball.x,0,'#8888ff',4);ARC.sfx.breakout.wallBounce();}
 
   // Paddle collision
   if(ball.dy>0&&
@@ -255,6 +257,7 @@ function updateGame(){
     ball.dx=Math.sin(ang)*ball.spd;
     ball.dy=-Math.cos(ang)*ball.spd;
     burst(ball.x,PADDLE_Y,CLR.enemy,8);
+    ARC.sfx.breakout.paddleHit();
   }
 
   // Brick collision
@@ -271,6 +274,7 @@ function updateGame(){
         burst(b.x+BRICK_W/2,b.y+BRICK_H/2,ROW_COLORS[b.row],8);
         // Speed up slightly
         ball.spd=Math.min(ball.spd+0.08,diff.ballSpd*1.8);
+        ARC.sfx.breakout.brickHit(b.row);
       }
       // Determine bounce axis
       const overlapL=ball.x+BALL_R-b.x;
@@ -288,14 +292,16 @@ function updateGame(){
   if(ball.y-BALL_R>LH){
     lives--;
     burst(ball.x,LH,CLR.ui,20);
-    if(lives<=0){gstate='GAMEOVER';return;}
+    if(lives<=0){ARC.sfx.breakout.lose();ARC.music.stop();gstate='GAMEOVER';return;}
+    ARC.sfx.breakout.lifeLost();
     resetBall();
   }
 
   // Check win
   if(!bricks.some(b=>b.alive)){
     score+=level*1000; level++;
-    if(level>5){gstate='WIN';return;}
+    if(level>5){ARC.sfx.breakout.win();ARC.music.stop();gstate='WIN';return;}
+    ARC.sfx.breakout.levelComplete();
     setupLevel();
   }
 
